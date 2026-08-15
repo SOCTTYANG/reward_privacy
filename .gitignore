@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+.venv/
+venv/
+ENV/
+.pytest_cache/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local data, checkpoints, logs, and experiment outputs
+data/
+logs/
+output/
+output_archive/
+results/
+models/
+*.log
+
+# Local scratch files
+agreement_all.log
+diff_all_list.txt
+main.py
+src/_init_.py
+scripts/eval_target_vs_substitute_diff_v2.py
