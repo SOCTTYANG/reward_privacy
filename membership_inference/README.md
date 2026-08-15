@@ -10,7 +10,6 @@ ablation_experiments/           The two ablation experiments
   reward_gap_only/              Reward-Gap-Only Ablation
   ppo_gradient_only/            PPO-Gradient-Only Ablation
 utilities/                      Metric collection and plotting scripts
-results/                        Small result tables and figures
 ```
 
 ## Method pipeline
@@ -71,4 +70,3 @@ The launchers contain machine-specific default model and output paths from the o
 ## Notes
 
 - Large checkpoints, logs, caches, and generated experiment output directories are excluded through `.gitignore`.
-- Existing small CSV summaries and figures are retained in `results/` for reference.

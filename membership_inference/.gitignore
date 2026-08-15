@@ -24,6 +24,3 @@ experiments/
 *.pth
 *.ckpt
 *.safetensors
-
-# Local rendering/browser caches
-results/metric_bar_charts/tmp/
