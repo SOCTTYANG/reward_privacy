@@ -1,0 +1,30 @@
+# Python caches and environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Model checkpoints and experiment tracking
+output/
+outputs/
+checkpoints/
+wandb/
+*.ckpt
+*.safetensors
+*.bin
+
+# Local data and logs
+data/
+logs/
+*.log
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Bundled archives are local hand-off artifacts, not source code
+*.zip
