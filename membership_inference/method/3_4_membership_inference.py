@@ -15,7 +15,7 @@ from transformers import (
     AutoModelForCausalLM,
 )
 
-from peft import PeftModel, LoraConfig, get_peft_model, TaskType
+from peft import PeftModel
 
 
 def load_json(path: str) -> List[Dict[str, Any]]:
@@ -178,16 +178,14 @@ def sequence_logprob(model, input_ids, attention_mask, labels):
 
     token_log_probs = token_log_probs * mask.float()
 
-    lengths = mask.float().sum(dim=-1).clamp(min=1.0)
-    seq_log_probs = token_log_probs.sum(dim=-1) / lengths
+    # Exact log pi(y|x): sum over every response token.
+    seq_log_probs = token_log_probs.sum(dim=-1)
 
     return seq_log_probs
 
 
 def ppo_clipped_loss(new_logp, old_logp, advantages, clip_eps: float):
     log_ratio = new_logp - old_logp
-    log_ratio = torch.clamp(log_ratio, min=-20, max=20)
-
     ratio = torch.exp(log_ratio)
     clipped_ratio = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps)
 
@@ -233,6 +231,7 @@ def compute_grad_norm_for_one_sample(
         device=device,
     )
 
+    policy_model.eval()
     policy_model.zero_grad(set_to_none=True)
 
     with torch.no_grad():
@@ -529,9 +528,10 @@ def main():
     )
 
     parser.add_argument(
-        "--policy_adapter_path",
+        "--policy_model_path",
         type=str,
         default=None,
+        help="Full policy snapshot at the beginning of the PPO step; defaults to policy_base_model.",
     )
 
     parser.add_argument(
@@ -562,16 +562,16 @@ def main():
         help="Skip y_plus/y_minus reward-gap scoring. Enabled automatically for ppo_gradient_only.",
     )
     parser.add_argument("--target_fpr", type=float, default=1.0)
-    # 如果不传 delta，默认使用 1% FPR 阈值。
-    parser.add_argument("--delta", type=float, default=None)
+    parser.add_argument(
+        "--delta",
+        type=float,
+        required=True,
+        help="Fixed decision threshold from an independent calibration set: member iff I >= delta.",
+    )
 
     parser.add_argument("--clip_eps", type=float, default=0.2)
 
     parser.add_argument("--max_rows", type=int, default=None)
-
-    parser.add_argument("--lora_r", type=int, default=16)
-    parser.add_argument("--lora_alpha", type=int, default=32)
-    parser.add_argument("--lora_dropout", type=float, default=0.05)
 
     args = parser.parse_args()
 
@@ -591,7 +591,7 @@ def main():
     print(f"[INFO] reward_base_model: {args.reward_base_model}")
     print(f"[INFO] reward_adapter_path: {args.reward_adapter_path}")
     print(f"[INFO] policy_base_model: {args.policy_base_model}")
-    print(f"[INFO] policy_adapter_path: {args.policy_adapter_path}")
+    print(f"[INFO] policy_model_path: {args.policy_model_path}")
     print(f"[INFO] output_dir: {args.output_dir}")
     print(f"[INFO] score_signal: {args.score_signal}")
     print(f"[INFO] skip_reward_gap_scoring: {skip_reward_gap_scoring}")
@@ -690,43 +690,17 @@ def main():
 
     policy_tokenizer.padding_side = "right"
 
+    policy_snapshot_path = args.policy_model_path or args.policy_base_model
     policy_model = AutoModelForCausalLM.from_pretrained(
-        args.policy_base_model,
+        policy_snapshot_path,
         torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
         trust_remote_code=True,
     )
 
     policy_model.config.pad_token_id = policy_tokenizer.pad_token_id
     policy_model.config.use_cache = False
-    policy_model.gradient_checkpointing_enable()
-
-    if args.policy_adapter_path is not None:
-        print(f"[INFO] Loading existing policy LoRA: {args.policy_adapter_path}")
-        policy_model = PeftModel.from_pretrained(
-            policy_model,
-            args.policy_adapter_path,
-            is_trainable=True,
-        )
-    else:
-        print("[INFO] Creating fresh policy LoRA for gradient calculation...")
-        lora_config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            r=args.lora_r,
-            lora_alpha=args.lora_alpha,
-            lora_dropout=args.lora_dropout,
-            target_modules=[
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-            ],
-            bias="none",
-        )
-
-        policy_model = get_peft_model(policy_model, lora_config)
+    for parameter in policy_model.parameters():
+        parameter.requires_grad_(True)
 
     policy_model.to(device)
     policy_model.train()
@@ -802,10 +776,12 @@ def main():
             }
         )
 
+    # The paper fixes the score direction: larger I means member.  Never use
+    # test labels to flip the score direction.
     raw_auc = compute_auc(y_true, final_scores)
-    score_flipped = raw_auc < 0.5
-    eval_scores = [-s for s in final_scores] if score_flipped else list(final_scores)
-    auc = 1.0 - raw_auc if score_flipped else raw_auc
+    score_flipped = False
+    eval_scores = list(final_scores)
+    auc = raw_auc
 
     report_fprs = dedupe_fprs([1.0, 5.0, args.target_fpr])
     metrics_by_target_fpr = {
@@ -822,7 +798,7 @@ def main():
     tpr_at_target_fpr = metrics_target_fpr["tpr"]
 
 
-    threshold = threshold_target_fpr if args.delta is None else args.delta
+    threshold = args.delta
 
     final_metrics = compute_classification_metrics(
         y_true=y_true,
@@ -830,13 +806,8 @@ def main():
         threshold=threshold,
     )
 
-    best_f1_metrics, best_accuracy_metrics, best_balanced_accuracy_metrics = scan_best_thresholds(
-        y_true=y_true,
-        y_score=eval_scores,
-    )
-
     table_metrics = {
-        "ASR": best_accuracy_metrics["accuracy"],
+        "ASR": final_metrics["accuracy"],
         "AUC": auc,
         "T@1%F": metrics_by_target_fpr.get("1pct", {}).get("tpr"),
         "T@5%F": metrics_by_target_fpr.get("5pct", {}).get("tpr"),
@@ -876,7 +847,7 @@ def main():
             "reward_base_model": args.reward_base_model,
             "reward_adapter_path": args.reward_adapter_path,
             "policy_base_model": args.policy_base_model,
-            "policy_adapter_path": args.policy_adapter_path,
+            "policy_model_path": args.policy_model_path,
             "score_signal": args.score_signal,
             "skip_reward_gap_scoring": skip_reward_gap_scoring,
             "lambda1": args.lambda1,
@@ -907,11 +878,6 @@ def main():
             "threshold_at_5pct_fpr": metrics_by_target_fpr.get("5pct", {}).get("threshold"),
         },
         "table_metrics": table_metrics,
-        "best_threshold_metrics": {
-            "best_f1": best_f1_metrics,
-            "best_accuracy": best_accuracy_metrics,
-            "best_balanced_accuracy": best_balanced_accuracy_metrics,
-        },
         "score_distribution": score_distribution,
         "degenerate_stats": degenerate_stats,
     }
@@ -948,20 +914,6 @@ def main():
         f.write(f"T@5%FPR: {metrics_by_target_fpr.get('5pct', {}).get('tpr')}\n")
         f.write(f"ACC@5%FPR: {metrics_by_target_fpr.get('5pct', {}).get('accuracy')}\n")
 
-        f.write("\nBest-threshold metrics:\n")
-
-        f.write("\nBest F1 metrics:\n")
-        for k, v in best_f1_metrics.items():
-            f.write(f"{k}: {v}\n")
-
-        f.write("\nBest Accuracy metrics:\n")
-        for k, v in best_accuracy_metrics.items():
-            f.write(f"{k}: {v}\n")
-
-        f.write("\nBest Balanced Accuracy metrics:\n")
-        for k, v in best_balanced_accuracy_metrics.items():
-            f.write(f"{k}: {v}\n")
-
         f.write("\nScore distribution:\n")
         f.write(json.dumps(score_distribution, ensure_ascii=False, indent=2))
         f.write("\n")
@@ -990,20 +942,6 @@ def main():
     print(f"threshold_at_target_fpr: {threshold_target_fpr}")
     print(f"T@1%FPR: {metrics_by_target_fpr.get('1pct', {}).get('tpr')}")
     print(f"T@5%FPR: {metrics_by_target_fpr.get('5pct', {}).get('tpr')}")
-
-    print("\nBest-threshold metrics:")
-
-    print("\nBest F1 metrics:")
-    for k, v in best_f1_metrics.items():
-        print(f"{k}: {v}")
-
-    print("\nBest Accuracy metrics:")
-    for k, v in best_accuracy_metrics.items():
-        print(f"{k}: {v}")
-
-    print("\nBest Balanced Accuracy metrics:")
-    for k, v in best_balanced_accuracy_metrics.items():
-        print(f"{k}: {v}")
 
     print("\nDegenerate stats:")
     for k, v in degenerate_stats.items():

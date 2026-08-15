@@ -321,19 +321,20 @@ def main():
     parser.add_argument(
         "--score_mode",
         type=str,
-        default="candidate_mean_gap",
-        choices=[
-            "candidate_mean_gap",
-            "candidate_max_gap",
-            "candidate_min_gap",
-            "original_pair_gap",
-        ],
+        default="original_pair_gap",
+        choices=["original_pair_gap"],
+        help="Paper-exact reward-gap-only score: r_plus - r_minus.",
     )
     parser.add_argument("--reward_batch_size", type=int, default=1)
     parser.add_argument("--reward_max_length", type=int, default=768)
     parser.add_argument("--target_fpr", type=float, default=5.0)
     parser.add_argument("--max_rows", type=int, default=None)
-    parser.add_argument("--delta", type=float, default=None)
+    parser.add_argument(
+        "--delta",
+        type=float,
+        required=True,
+        help="Fixed threshold selected on an independent calibration set.",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -454,9 +455,9 @@ def main():
         )
 
     raw_auc = compute_auc(y_true, final_scores)
-    score_flipped = raw_auc < 0.5
-    eval_scores = [-s for s in final_scores] if score_flipped else list(final_scores)
-    auc = 1.0 - raw_auc if score_flipped else raw_auc
+    score_flipped = False
+    eval_scores = list(final_scores)
+    auc = raw_auc
 
     report_fprs = dedupe_fprs([1.0, 5.0, args.target_fpr])
     metrics_by_target_fpr = {
@@ -470,7 +471,7 @@ def main():
     target_key = fpr_metric_key(args.target_fpr)
     metrics_target_fpr = metrics_by_target_fpr[target_key]
     threshold_target_fpr = metrics_target_fpr["threshold"]
-    threshold = threshold_target_fpr if args.delta is None else args.delta
+    threshold = args.delta
 
     final_metrics = compute_classification_metrics(
         y_true=y_true,
@@ -478,13 +479,8 @@ def main():
         threshold=threshold,
     )
 
-    best_f1_metrics, best_accuracy_metrics, best_balanced_accuracy_metrics = scan_best_thresholds(
-        y_true=y_true,
-        y_score=eval_scores,
-    )
-
     table_metrics = {
-        "ASR": best_accuracy_metrics["accuracy"],
+        "ASR": final_metrics["accuracy"],
         "AUC": auc,
         "T@1%F": metrics_by_target_fpr.get("1pct", {}).get("tpr"),
         "T@5%F": metrics_by_target_fpr.get("5pct", {}).get("tpr"),
@@ -527,11 +523,6 @@ def main():
             "threshold_at_5pct_fpr": metrics_by_target_fpr.get("5pct", {}).get("threshold"),
         },
         "table_metrics": table_metrics,
-        "best_threshold_metrics": {
-            "best_f1": best_f1_metrics,
-            "best_accuracy": best_accuracy_metrics,
-            "best_balanced_accuracy": best_balanced_accuracy_metrics,
-        },
         "score_distribution": summarize_score_distribution(results),
     }
 

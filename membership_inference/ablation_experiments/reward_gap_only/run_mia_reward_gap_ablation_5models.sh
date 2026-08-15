@@ -27,7 +27,7 @@ if [[ -z "${PYTHON_BIN:-}" ]]; then
   fi
 fi
 
-SCORE_MODE="${SCORE_MODE:-candidate_mean_gap}"
+SCORE_MODE="original_pair_gap"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/mnt/model_data/yang_safe/mia_reward_gap_ablation_${SCORE_MODE}_m${M_VALUE}_5models}"
 LOG_ROOT="${LOG_ROOT:-${OUTPUT_ROOT}/logs}"
 export HF_HOME="${HF_HOME:-${OUTPUT_ROOT}/huggingface_cache}"
@@ -65,6 +65,7 @@ REWARD_MAX_LENGTH="${REWARD_MAX_LENGTH:-768}"
 TEMPERATURE="${TEMPERATURE:-1.0}"
 TOP_P="${TOP_P:-0.9}"
 TARGET_FPR="${TARGET_FPR:-5.0}"
+DELTA="${DELTA:?Set DELTA to a fixed threshold selected on an independent calibration set}"
 CUDA_DEVICE="${CUDA_DEVICE:-1}"
 RUN_MODEL_TAGS="${RUN_MODEL_TAGS:-}"
 SKIP_MODEL_TAGS="${SKIP_MODEL_TAGS:-}"
@@ -228,7 +229,8 @@ run_one_model() {
       --score_mode "${SCORE_MODE}" \
       --reward_batch_size "${REWARD_BATCH_SIZE}" \
       --reward_max_length "${REWARD_MAX_LENGTH}" \
-      --target_fpr "${TARGET_FPR}"
+      --target_fpr "${TARGET_FPR}" \
+      --delta "${DELTA}"
   fi
 
   if [[ ! -s "${table_csv}" ]]; then

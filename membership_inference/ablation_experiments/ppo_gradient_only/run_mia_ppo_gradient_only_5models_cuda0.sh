@@ -77,15 +77,13 @@ RUN_MODEL_TAGS="${RUN_MODEL_TAGS:-}"
 SKIP_MODEL_TAGS="${SKIP_MODEL_TAGS:-}"
 OVERWRITE="${OVERWRITE:-0}"
 
-LORA_R="${LORA_R:-64}"
-LORA_ALPHA="${LORA_ALPHA:-128}"
-LORA_DROPOUT="${LORA_DROPOUT:-0.05}"
-GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-8}"
+GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-1}"
 STAGE3_SAVE_STEPS="${STAGE3_SAVE_STEPS:-100000000}"
 
 LAMBDA2="${LAMBDA2:-1.0}"
 TARGET_FPR="${TARGET_FPR:-5.0}"
 CLIP_EPS="${CLIP_EPS:-0.2}"
+DELTA="${DELTA:?Set DELTA to a fixed threshold selected on an independent calibration set}"
 
 require_file() {
   local path="$1"
@@ -131,18 +129,18 @@ tag_skipped() {
   return 1
 }
 
-best_policy_lora_dir() {
+best_policy_dir() {
   local stage33_dir="$1"
-  local found_lora
+  local found_policy
 
-  if [[ -f "${stage33_dir}/final_policy_lora/adapter_config.json" ]]; then
-    echo "${stage33_dir}/final_policy_lora"
+  if [[ -f "${stage33_dir}/final_policy/config.json" ]]; then
+    echo "${stage33_dir}/final_policy"
     return 0
   fi
 
-  found_lora="$(find "${stage33_dir}" -type f -name adapter_config.json 2>/dev/null | sort -V | tail -n 1 || true)"
-  if [[ -n "${found_lora}" ]]; then
-    dirname "${found_lora}"
+  found_policy="$(find "${stage33_dir}" -type f -name config.json 2>/dev/null | sort -V | tail -n 1 || true)"
+  if [[ -n "${found_policy}" ]]; then
+    dirname "${found_policy}"
   fi
 }
 
@@ -165,7 +163,7 @@ mkdir -p "${OUTPUT_ROOT}" "${LOG_ROOT}"
 SUMMARY_CSV="${OUTPUT_ROOT}/mia_ppo_gradient_only_m${M_VALUE}_table_metrics.csv"
 MANIFEST_TSV="${OUTPUT_ROOT}/mia_ppo_gradient_only_m${M_VALUE}_outputs.tsv"
 printf "model_tag,ASR,AUC,T@1%%F,T@5%%F\n" > "${SUMMARY_CSV}"
-printf "model_tag\ttable_csv\tsummary_json\tpolicy_lora\trun_dir\n" > "${MANIFEST_TSV}"
+printf "model_tag\ttable_csv\tsummary_json\tpolicy_model\trun_dir\n" > "${MANIFEST_TSV}"
 
 echo "============================================================"
 echo "[MIA PPO-Gradient-Only Pipeline]"
@@ -200,7 +198,7 @@ run_one_model() {
   local stage31_nonmember="${stage31_dir}/nonmember.jsonl"
   local stage32_output_name="3.2_candidate_response_generation_m${M_VALUE}_${model_tag}.json"
   local stage32_output="${stage32_dir}/${stage32_output_name}"
-  local policy_lora="${stage33_dir}/final_policy_lora"
+  local policy_dir="${stage33_dir}/final_policy"
   local table_csv="${stage34_dir}/3.4_mia_table_metrics.csv"
   local summary_json="${stage34_dir}/3.4_membership_inference_summary.json"
 
@@ -249,9 +247,9 @@ run_one_model() {
   echo "============================================================"
   echo "[3.3] LLM update PPO"
   echo "============================================================"
-  policy_lora="$(best_policy_lora_dir "${stage33_dir}")"
-  if [[ -n "${policy_lora}" && "${OVERWRITE}" != "1" ]]; then
-    echo "[3.3] Found existing policy LoRA, skip: ${policy_lora}"
+  policy_dir="$(best_policy_dir "${stage33_dir}")"
+  if [[ -n "${policy_dir}" && "${OVERWRITE}" != "1" ]]; then
+    echo "[3.3] Found existing full policy, skip: ${policy_dir}"
   else
     CUDA_VISIBLE_DEVICES="${CUDA_DEVICE}" "${PYTHON_BIN}" "${STAGE33_SCRIPT}" \
       --input_path "${stage32_output}" \
@@ -262,22 +260,16 @@ run_one_model() {
       --per_device_train_batch_size 1 \
       --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS}" \
       --learning_rate 1e-5 \
-      --weight_decay 0.0 \
       --clip_eps "${CLIP_EPS}" \
-      --max_grad_norm 1.0 \
       --logging_steps 10 \
       --save_steps "${STAGE3_SAVE_STEPS}" \
-      --seed "${SEED}" \
-      --normalize_advantage \
-      --lora_r "${LORA_R}" \
-      --lora_alpha "${LORA_ALPHA}" \
-      --lora_dropout "${LORA_DROPOUT}"
+      --seed "${SEED}"
 
-    policy_lora="$(best_policy_lora_dir "${stage33_dir}")"
+    policy_dir="$(best_policy_dir "${stage33_dir}")"
   fi
 
-  if [[ -z "${policy_lora}" || ! -f "${policy_lora}/adapter_config.json" ]]; then
-    echo "[ERROR] Cannot find policy LoRA after Step 3 in: ${stage33_dir}"
+  if [[ -z "${policy_dir}" || ! -f "${policy_dir}/config.json" ]]; then
+    echo "[ERROR] Cannot find full policy after Step 3 in: ${stage33_dir}"
     exit 1
   fi
 
@@ -292,7 +284,7 @@ run_one_model() {
       --reward_base_model "${RM_BASE_MODEL}" \
       --reward_adapter_path "${RM_ADAPTER}" \
       --policy_base_model "${model_path}" \
-      --policy_adapter_path "${policy_lora}" \
+      --policy_model_path "${policy_dir}" \
       --output_dir "${stage34_dir}" \
       --policy_max_length "${POLICY_MAX_LENGTH}" \
       --lambda1 0.0 \
@@ -300,9 +292,7 @@ run_one_model() {
       --score_signal ppo_gradient_only \
       --target_fpr "${TARGET_FPR}" \
       --clip_eps "${CLIP_EPS}" \
-      --lora_r "${LORA_R}" \
-      --lora_alpha "${LORA_ALPHA}" \
-      --lora_dropout "${LORA_DROPOUT}"
+      --delta "${DELTA}"
   fi
 
   if [[ ! -s "${table_csv}" ]]; then
@@ -313,7 +303,7 @@ run_one_model() {
   local metrics_line
   metrics_line="$(tail -n 1 "${table_csv}" | tr -d '\r')"
   printf "%s,%s\n" "${model_tag}" "${metrics_line}" >> "${SUMMARY_CSV}"
-  printf "%s\t%s\t%s\t%s\t%s\n" "${model_tag}" "${table_csv}" "${summary_json}" "${policy_lora}" "${run_dir}" >> "${MANIFEST_TSV}"
+  printf "%s\t%s\t%s\t%s\t%s\n" "${model_tag}" "${table_csv}" "${summary_json}" "${policy_dir}" "${run_dir}" >> "${MANIFEST_TSV}"
 
   echo "[DONE] ${model_tag}"
   echo "[TABLE] ${table_csv}"

@@ -11,7 +11,6 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from peft import LoraConfig, PeftModel, get_peft_model, TaskType
 
 
 def load_json(path: str) -> List[Dict[str, Any]]:
@@ -209,16 +208,17 @@ def sequence_logprob(model, input_ids, attention_mask, labels):
 
     token_log_probs = token_log_probs * mask.float()
 
-    lengths = mask.float().sum(dim=-1).clamp(min=1.0)
-    seq_log_probs = token_log_probs.sum(dim=-1) / lengths
+    # pi(y|x) is the probability of the complete response sequence, so its
+    # log-probability is the SUM of response-token log-probabilities.  Do not
+    # length-normalize here: doing so would implement a geometric-mean token
+    # probability rather than Eq. (3)'s sequence probability ratio.
+    seq_log_probs = token_log_probs.sum(dim=-1)
 
     return seq_log_probs
 
 
 def ppo_clipped_loss(new_logp, old_logp, advantages, clip_eps: float):
     log_ratio = new_logp - old_logp
-    log_ratio = torch.clamp(log_ratio, min=-20, max=20)
-
     ratio = torch.exp(log_ratio)
     clipped_ratio = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps)
 
@@ -276,25 +276,18 @@ def main():
     parser.add_argument("--max_length", type=int, default=640)
     parser.add_argument("--num_train_epochs", type=int, default=1)
     parser.add_argument("--per_device_train_batch_size", type=int, default=1)
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=8)
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=1)
 
     parser.add_argument("--learning_rate", type=float, default=1e-5)
-    parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--clip_eps", type=float, default=0.2)
-    parser.add_argument("--max_grad_norm", type=float, default=1.0)
 
     parser.add_argument("--logging_steps", type=int, default=10)
     parser.add_argument("--save_steps", type=int, default=100)
 
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--normalize_advantage", action="store_true")
     parser.add_argument("--resume_from_checkpoint", type=str, default=None)
     parser.add_argument("--resume_global_step", type=int, default=None)
     parser.add_argument("--resume_skip_batches", type=int, default=None)
-
-    parser.add_argument("--lora_r", type=int, default=16)
-    parser.add_argument("--lora_alpha", type=int, default=32)
-    parser.add_argument("--lora_dropout", type=float, default=0.05)
 
     args = parser.parse_args()
 
@@ -302,7 +295,7 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    print("[INFO] Step 3: Full PPO with frozen old policy")
+    print("[INFO] Step 3: paper-exact full-parameter PPO")
     print(f"[INFO] input_path: {args.input_path}")
     print(f"[INFO] base_model: {args.base_model}")
     print(f"[INFO] output_dir: {args.output_dir}")
@@ -350,46 +343,24 @@ def main():
 
     policy_model.config.pad_token_id = tokenizer.pad_token_id
     policy_model.config.use_cache = False
-    policy_model.gradient_checkpointing_enable()
-
     if args.resume_from_checkpoint is not None:
-        print(f"[INFO] Loading trainable policy LoRA from checkpoint: {args.resume_from_checkpoint}")
-        policy_model = PeftModel.from_pretrained(
-            policy_model,
+        print(f"[INFO] Loading full policy checkpoint: {args.resume_from_checkpoint}")
+        policy_model = AutoModelForCausalLM.from_pretrained(
             args.resume_from_checkpoint,
-            is_trainable=True,
+            torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+            trust_remote_code=True,
         )
-    else:
-        lora_config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            r=args.lora_r,
-            lora_alpha=args.lora_alpha,
-            lora_dropout=args.lora_dropout,
-            target_modules=[
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-            ],
-            bias="none",
-        )
-
-        policy_model = get_peft_model(policy_model, lora_config)
-    policy_model.print_trainable_parameters()
+    for parameter in policy_model.parameters():
+        parameter.requires_grad_(True)
     policy_model.to(device)
     policy_model.train()
 
 
     print("\n[INFO] Loading frozen old policy model...")
 
-    old_policy_model = AutoModelForCausalLM.from_pretrained(
-        args.base_model,
-        torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-        trust_remote_code=True,
-    )
+    # Both policies start from the same pretrained f, exactly as stated in the
+    # paper.  This model is refreshed from pi_phi at each PPO epoch below.
+    old_policy_model = copy.deepcopy(policy_model)
 
     old_policy_model.config.pad_token_id = tokenizer.pad_token_id
     old_policy_model.config.use_cache = False
@@ -405,7 +376,7 @@ def main():
         samples=samples,
         tokenizer=tokenizer,
         max_length=args.max_length,
-        normalize_advantage=args.normalize_advantage,
+        normalize_advantage=False,
     )
 
     dataloader = DataLoader(
@@ -415,10 +386,11 @@ def main():
         collate_fn=PPOCollator(tokenizer),
     )
 
-    optimizer = torch.optim.AdamW(
+    # Eq. (3): phi <- phi - eta * g_phi.  Plain SGD implements that update
+    # directly; AdamW and weight decay would define a different update rule.
+    optimizer = torch.optim.SGD(
         policy_model.parameters(),
         lr=args.learning_rate,
-        weight_decay=args.weight_decay,
     )
 
     total_update_steps = math.ceil(
@@ -432,7 +404,7 @@ def main():
     config_to_save["num_ppo_samples"] = len(samples)
     config_to_save["member_candidate_samples"] = member_count
     config_to_save["nonmember_candidate_samples"] = nonmember_count
-    config_to_save["ppo_type"] = "full_frozen_old_policy"
+    config_to_save["ppo_type"] = "paper_exact_full_parameter_ppo"
 
     save_json(config_to_save, os.path.join(args.output_dir, "3.3_config.json"))
 
@@ -467,6 +439,10 @@ def main():
     optimizer.zero_grad(set_to_none=True)
 
     for epoch in range(args.num_train_epochs):
+        # At the beginning of every PPO step, reset pi_ref to the current
+        # pi_phi, then keep it frozen during the updates in this step.
+        old_policy_model.load_state_dict(policy_model.state_dict())
+        old_policy_model.eval()
         progress = tqdm(dataloader, desc=f"Full PPO epoch {epoch + 1}/{args.num_train_epochs}")
 
         for batch_idx, batch in enumerate(progress):
@@ -514,7 +490,6 @@ def main():
             log_count += 1
 
             if (batch_idx + 1) % args.gradient_accumulation_steps == 0:
-                torch.nn.utils.clip_grad_norm_(policy_model.parameters(), args.max_grad_norm)
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
 
@@ -554,12 +529,12 @@ def main():
 
     save_checkpoint(policy_model, tokenizer, args.output_dir, global_step)
 
-    final_dir = os.path.join(args.output_dir, "final_policy_lora")
+    final_dir = os.path.join(args.output_dir, "final_policy")
     policy_model.save_pretrained(final_dir)
     tokenizer.save_pretrained(final_dir)
 
     print("\n[DONE] Full PPO Step 3 finished.")
-    print(f"[DONE] Final policy LoRA saved to: {final_dir}")
+    print(f"[DONE] Final full policy saved to: {final_dir}")
 
 
 if __name__ == "__main__":
