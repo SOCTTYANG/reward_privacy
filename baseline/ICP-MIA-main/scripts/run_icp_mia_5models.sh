@@ -2,9 +2,19 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="${PROJECT_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+if [[ -n "${PROJECT_DIR:-}" ]]; then
+  PROJECT_DIR="$(cd "${PROJECT_DIR}" && pwd)"
+elif [[ -d "${SCRIPT_DIR}/../baseline/ICP-MIA-main" ]]; then
+  PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+else
+  PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+fi
 MI_DIR="${PROJECT_DIR}/membership inference"
-ICP_DIR="${PROJECT_DIR}/baseline/ICP-MIA-main"
+if [[ -f "${SCRIPT_DIR}/../icp_mia_attack.py" ]]; then
+  ICP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+else
+  ICP_DIR="${PROJECT_DIR}/baseline/ICP-MIA-main"
+fi
 
 export PYTHONUNBUFFERED=1
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
