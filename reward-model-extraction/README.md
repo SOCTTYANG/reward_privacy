@@ -9,6 +9,8 @@ target models, and training extracted reward models using two-stage objectives.
 
 - `src/`: training, data preparation, scoring, and metric implementations.
 - `scripts/`: shell launchers for the experiments and evaluations.
+  - `scripts/ablation/query_budget/`: 50% and 25% query-budget ablations.
+  - `scripts/open_source_reward_models/`: attacks against public reward models.
 - `tests/`: unit tests for extraction metrics.
 - `check_saferlhf_overlap.py`: utility for dataset-overlap checks.
 
@@ -54,6 +56,25 @@ bash scripts/03_train_extracted_rm_two_stage_exp1.sh
 
 Alternatively, invoke modules directly; see the argument definitions in the
 corresponding files under `src/`.
+
+### Query-budget ablation
+
+The launchers under `scripts/ablation/query_budget/` reduce the original 5,000
+distillation queries to 2,500 (50%) and 1,250 (25%), then train and evaluate
+the student model with the same data split and random seed.
+
+### Public reward-model extraction
+
+The launchers under `scripts/open_source_reward_models/` apply the extraction
+pipeline to public reward models. The Skywork workflow uses the target
+tokenizer's chat template, queries the target model, and trains a RoBERTa
+substitute. For example:
+
+```bash
+SKYWORK_MODEL=/path/to/Skywork-Reward-Llama-3.1-8B \
+STUDENT_MODEL=/path/to/roberta-base \
+bash scripts/open_source_reward_models/run_skywork_reward_extraction.sh
+```
 
 ## Tests
 

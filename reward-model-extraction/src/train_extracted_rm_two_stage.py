@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset, Subset, random_split
 from tqdm import tqdm
 from transformers import (
     AutoModelForSequenceClassification,
@@ -65,8 +65,10 @@ def move_to_device(batch: Dict[str, Any], device: str) -> Dict[str, Any]:
 
 
 class PreferenceDataset(Dataset):
-    def __init__(self, path: str, max_samples: Optional[int] = None):
-        raw = read_jsonl(path, max_samples=max_samples)
+    def __init__(self, path: str, max_samples: Optional[int] = None, skip_samples: int = 0):
+        # Apply skip/max after validation so the Stage-B source slice uses the
+        # same valid-triple indexing as prepare_hh_aux_disjoint.py.
+        raw = read_jsonl(path, max_samples=None)
 
         self.data = []
         for item in raw:
@@ -83,6 +85,10 @@ class PreferenceDataset(Dataset):
             if not prompt.strip() or not chosen.strip() or not rejected.strip():
                 continue
 
+            if len(self.data) < skip_samples:
+                self.data.append(None)
+                continue
+
             self.data.append(
                 {
                     "prompt": prompt,
@@ -90,6 +96,12 @@ class PreferenceDataset(Dataset):
                     "rejected": rejected,
                 }
             )
+
+            if max_samples is not None and len(self.data) - skip_samples >= max_samples:
+                break
+
+        if skip_samples:
+            self.data = self.data[skip_samples:]
 
     def __len__(self):
         return len(self.data)
@@ -123,6 +135,7 @@ class ScoredAuxDataset(Dataset):
                     "response": response,
                     "target_score": target_score,
                     "category": str(item.get("category", "")),
+                    "source_pair_index": item.get("source_pair_index"),
                 }
             )
 
@@ -201,6 +214,54 @@ class ScoredAuxCollator:
             "input_ids": enc["input_ids"],
             "attention_mask": enc["attention_mask"],
             "target_scores": target_scores,
+        }
+
+
+class TeacherRankPairDataset(Dataset):
+    """Pair Stage-B responses using only their queried teacher rewards."""
+    def __init__(self, scored_dataset: ScoredAuxDataset, indices: List[int]):
+        groups: Dict[Any, List[Dict[str, Any]]] = {}
+        for index in indices:
+            item = scored_dataset[index]
+            pair_id = item.get("source_pair_index")
+            if pair_id is None:
+                raise ValueError("Teacher-derived ranking needs source_pair_index in scored auxiliary data.")
+            groups.setdefault(pair_id, []).append(item)
+
+        self.data = []
+        for pair_id, items in groups.items():
+            if len(items) != 2:
+                raise ValueError(f"Expected exactly two queried responses for source pair {pair_id}, got {len(items)}.")
+            high, low = sorted(items, key=lambda item: float(item["target_score"]), reverse=True)
+            # A tied teacher score gives no teacher-derived ordering signal.
+            if float(high["target_score"]) == float(low["target_score"]):
+                continue
+            self.data.append({"higher": high, "lower": low})
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        return self.data[index]
+
+
+class TeacherRankPairCollator:
+    def __init__(self, tokenizer, max_length: int):
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+
+    def __call__(self, batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+        def encode(which: str):
+            texts = [build_text(item[which]["prompt"], item[which]["response"]) for item in batch]
+            return self.tokenizer(texts, padding=True, truncation=True,
+                                  max_length=self.max_length, return_tensors="pt")
+        higher = encode("higher")
+        lower = encode("lower")
+        return {
+            "higher_input_ids": higher["input_ids"],
+            "higher_attention_mask": higher["attention_mask"],
+            "lower_input_ids": lower["input_ids"],
+            "lower_attention_mask": lower["attention_mask"],
         }
 
 
@@ -438,6 +499,7 @@ def train_stage_b_regression(
     model,
     train_loader: DataLoader,
     eval_loader: DataLoader,
+    teacher_pair_loader: Optional[DataLoader],
     args,
 ) -> Dict[str, Any]:
     total_steps = len(train_loader) * args.distill_epochs
@@ -454,6 +516,7 @@ def train_stage_b_regression(
         "before": None,
         "epochs": [],
         "after": None,
+        "score_normalization": {"mean": args.distill_score_mean, "std": args.distill_score_std},
     }
 
     print("========== Stage B Before Eval: Dolly Scored Auxiliary ==========")
@@ -470,7 +533,10 @@ def train_stage_b_regression(
         model.train()
 
         total_loss = 0.0
+        total_regression_loss = 0.0
+        total_ranking_loss = 0.0
         total_count = 0
+        teacher_pair_iter = iter(teacher_pair_loader) if teacher_pair_loader is not None else None
 
         pbar = tqdm(train_loader, desc=f"Stage B Distillation epoch {epoch + 1}")
 
@@ -483,8 +549,34 @@ def train_stage_b_regression(
             ).logits.squeeze(-1)
 
             target_scores = batch["target_scores"]
+            # Normalize the regression *loss*, while retaining the original
+            # reward scale in the model output and in evaluation metrics.
+            pred_normalized = (pred_scores - args.distill_score_mean) / args.distill_score_std
+            target_normalized = (target_scores - args.distill_score_mean) / args.distill_score_std
+            regression_loss = F.mse_loss(pred_normalized, target_normalized)
 
-            loss = F.mse_loss(pred_scores, target_scores)
+            ranking_loss = torch.zeros((), device=args.device)
+            if teacher_pair_iter is not None:
+                try:
+                    teacher_pair_batch = next(teacher_pair_iter)
+                except StopIteration:
+                    teacher_pair_iter = iter(teacher_pair_loader)
+                    teacher_pair_batch = next(teacher_pair_iter)
+                teacher_pair_batch = move_to_device(teacher_pair_batch, args.device)
+                higher_scores = model(
+                    input_ids=teacher_pair_batch["higher_input_ids"],
+                    attention_mask=teacher_pair_batch["higher_attention_mask"],
+                ).logits.squeeze(-1)
+                lower_scores = model(
+                    input_ids=teacher_pair_batch["lower_input_ids"],
+                    attention_mask=teacher_pair_batch["lower_attention_mask"],
+                ).logits.squeeze(-1)
+                ranking_loss = -F.logsigmoid(higher_scores - lower_scores).mean()
+
+            loss = (
+                args.stage_b_regression_weight * regression_loss
+                + args.stage_b_teacher_pair_weight * ranking_loss
+            )
 
             optimizer.zero_grad()
             loss.backward()
@@ -497,11 +589,15 @@ def train_stage_b_regression(
 
             bs = pred_scores.size(0)
             total_loss += loss.item() * bs
+            total_regression_loss += regression_loss.item() * bs
+            total_ranking_loss += ranking_loss.item() * bs
             total_count += bs
 
             pbar.set_postfix(
                 {
-                    "mse": f"{loss.item():.4f}",
+                    "loss": f"{loss.item():.4f}",
+                    "reg": f"{regression_loss.item():.4f}",
+                    "rank": f"{ranking_loss.item():.4f}",
                     "pred": f"{pred_scores.detach().mean().item():.4f}",
                     "target": f"{target_scores.detach().mean().item():.4f}",
                 }
@@ -511,7 +607,9 @@ def train_stage_b_regression(
 
         epoch_record = {
             "epoch": epoch + 1,
-            "train_mse_loss": avg_loss,
+            "train_joint_loss": avg_loss,
+            "train_normalized_mse_loss": total_regression_loss / max(total_count, 1),
+            "train_ranking_loss": total_ranking_loss / max(total_count, 1),
         }
 
         print(f"[Stage B] epoch={epoch + 1}, train_mse_loss={avg_loss:.6f}")
@@ -623,15 +721,44 @@ def train(args) -> None:
     aux_train_size = int(len(scored_aux_dataset) * args.aux_train_ratio)
     aux_eval_size = len(scored_aux_dataset) - aux_train_size
 
-    aux_train_dataset, aux_eval_dataset = random_split(
-        scored_aux_dataset,
-        [aux_train_size, aux_eval_size],
-        generator=torch.Generator().manual_seed(args.seed),
-    )
+    source_ids = [item.get("source_pair_index") for item in scored_aux_dataset.data]
+    if all(source_id is not None for source_id in source_ids):
+        # Split whole original triples, never individual responses.  This both
+        # preserves teacher-derived pairs and prevents pair leakage into the
+        # auxiliary validation set.
+        grouped_indices: Dict[Any, List[int]] = {}
+        for index, source_id in enumerate(source_ids):
+            grouped_indices.setdefault(source_id, []).append(index)
+        pair_ids = list(grouped_indices)
+        random.Random(args.seed).shuffle(pair_ids)
+        train_pair_count = int(len(pair_ids) * args.aux_train_ratio)
+        train_indices = [index for pair_id in pair_ids[:train_pair_count] for index in grouped_indices[pair_id]]
+        eval_indices = [index for pair_id in pair_ids[train_pair_count:] for index in grouped_indices[pair_id]]
+        aux_train_dataset = Subset(scored_aux_dataset, train_indices)
+        aux_eval_dataset = Subset(scored_aux_dataset, eval_indices)
+    else:
+        aux_train_dataset, aux_eval_dataset = random_split(
+            scored_aux_dataset,
+            [aux_train_size, aux_eval_size],
+            generator=torch.Generator().manual_seed(args.seed),
+        )
 
     print(f"[INFO] scored aux total samples = {len(scored_aux_dataset)}")
     print(f"[INFO] scored aux train samples = {len(aux_train_dataset)}")
     print(f"[INFO] scored aux eval samples  = {len(aux_eval_dataset)}")
+
+    train_target_scores = [
+        float(scored_aux_dataset[index]["target_score"])
+        for index in aux_train_dataset.indices
+    ]
+    if args.normalize_distill_scores:
+        args.distill_score_mean = sum(train_target_scores) / len(train_target_scores)
+        variance = sum((score - args.distill_score_mean) ** 2 for score in train_target_scores) / len(train_target_scores)
+        args.distill_score_std = max(math.sqrt(variance), 1e-6)
+    else:
+        args.distill_score_mean = 0.0
+        args.distill_score_std = 1.0
+    print(f"[INFO] Stage B score normalization: mean={args.distill_score_mean:.6f}, std={args.distill_score_std:.6f}")
 
     aux_collator = ScoredAuxCollator(
         tokenizer=tokenizer,
@@ -653,6 +780,20 @@ def train(args) -> None:
         collate_fn=aux_collator,
         num_workers=0,
     )
+
+    teacher_pair_loader = None
+    if args.stage_b_teacher_pair_weight > 0:
+        teacher_pair_dataset = TeacherRankPairDataset(scored_aux_dataset, aux_train_dataset.indices)
+        if not teacher_pair_dataset:
+            raise ValueError("No non-tied teacher-derived pairs are available for Stage B ranking.")
+        print(f"[INFO] Stage B teacher-derived ranking pairs = {len(teacher_pair_dataset)}")
+        teacher_pair_loader = DataLoader(
+            teacher_pair_dataset,
+            batch_size=args.pref_batch_size,
+            shuffle=True,
+            collate_fn=TeacherRankPairCollator(tokenizer=tokenizer, max_length=args.max_length),
+            num_workers=0,
+        )
 
     # ========== Final PKU eval data ==========
     pku_eval_loader = None
@@ -721,6 +862,7 @@ def train(args) -> None:
             model=model,
             train_loader=aux_train_loader,
             eval_loader=aux_eval_loader,
+            teacher_pair_loader=teacher_pair_loader,
             args=args,
         )
         final_metrics["stage_b_dolly_regression"] = stage_b_metrics
@@ -802,6 +944,11 @@ def parse_args():
 
     parser.add_argument("--pref_lr", type=float, default=2e-5)
     parser.add_argument("--distill_lr", type=float, default=1e-5)
+    parser.add_argument("--normalize_distill_scores", action="store_true",
+                        help="Z-score teacher rewards within the Stage-B training split for the regression loss.")
+    parser.add_argument("--stage_b_regression_weight", type=float, default=1.0)
+    parser.add_argument("--stage_b_teacher_pair_weight", type=float, default=0.0,
+                        help="Weight of ranking loss whose direction comes only from paired teacher scores.")
 
     parser.add_argument("--weight_decay", type=float, default=0.01)
     parser.add_argument("--warmup_ratio", type=float, default=0.03)
