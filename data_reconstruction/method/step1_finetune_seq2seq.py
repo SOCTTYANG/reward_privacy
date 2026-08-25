@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from datasets import load_dataset
 from peft import LoraConfig, TaskType, get_peft_model
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 from transformers import (
     AutoModel,
@@ -20,7 +21,6 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
-
 
 INSTRUCTION_PREFIX = (
     "You are given a user prompt and a preferred response. "
@@ -120,7 +120,7 @@ class ReconstructionTripletDataset(Dataset):
         target_reserved_tokens: int = 128,
         max_samples: Optional[int] = None,
     ) -> None:
-        self.samples: List[Dict[str, str]] = []
+        self.samples: List[Dict[str, Any]] = []
         dropped = 0
 
         self.tokenizer = tokenizer
@@ -160,34 +160,32 @@ class ReconstructionTripletDataset(Dataset):
                     add_special_tokens=False,
                     truncation=False,
                 )["input_ids"]
-                y_minus_ids = full_y_minus_ids[: self.target_reserved_tokens]
-
-                if len(y_minus_ids) < self.min_target_tokens:
+                if len(full_y_minus_ids) < self.min_target_tokens:
+                    dropped += 1
+                    continue
+                if len(full_y_minus_ids) > self.target_reserved_tokens:
                     dropped += 1
                     continue
 
                 source_ids = self.tokenizer(
                     source_text,
                     add_special_tokens=True,
-                    truncation=True,
-                    max_length=self.max_length,
+                    truncation=False,
                 )["input_ids"]
 
-                available_for_target = self.max_length - len(source_ids)
-                if available_for_target < self.min_target_tokens:
+                if (
+                    len(source_ids) > self.max_source_tokens
+                    or len(source_ids) + len(full_y_minus_ids) > self.max_length
+                ):
                     dropped += 1
                     continue
-
-                y_minus_target = (
-                    y_minus
-                    if len(full_y_minus_ids) <= self.target_reserved_tokens
-                    else self.tokenizer.decode(y_minus_ids, skip_special_tokens=True)
-                )
 
                 self.samples.append(
                     {
                         "source_text": source_text,
-                        "target_text": y_minus_target,
+                        "target_text": y_minus,
+                        "source_ids": source_ids,
+                        "target_ids": full_y_minus_ids,
                     }
                 )
 
@@ -206,7 +204,7 @@ class ReconstructionTripletDataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> Dict[str, str]:
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
         return self.samples[idx]
 
 
@@ -218,32 +216,31 @@ class ReconstructionCollator:
     def __call__(self, batch):
         sources = [x["source_text"] for x in batch]
         targets = [x["target_text"] for x in batch]
-        full_texts = [s + t for s, t in zip(sources, targets)]
+        pad_id = self.tokenizer.pad_token_id
+        if pad_id is None:
+            raise ValueError("The training tokenizer must define pad_token_id.")
 
-        tokenized_full = self.tokenizer(
-            full_texts,
-            padding=True,
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors="pt",
-        )
-        tokenized_source = self.tokenizer(
-            sources,
-            padding=True,
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors="pt",
-        )
+        input_rows = []
+        label_rows = []
+        mask_rows = []
+        for sample in batch:
+            source_ids = list(sample["source_ids"])
+            target_ids = list(sample["target_ids"])
+            if len(source_ids) + len(target_ids) > self.max_length:
+                raise ValueError(
+                    "A complete (x, y_plus, y_minus) sequence exceeds max_length."
+                )
+            input_rows.append(torch.tensor(source_ids + target_ids, dtype=torch.long))
+            label_rows.append(
+                torch.tensor([-100] * len(source_ids) + target_ids, dtype=torch.long)
+            )
+            mask_rows.append(
+                torch.ones(len(source_ids) + len(target_ids), dtype=torch.long)
+            )
 
-        input_ids = tokenized_full["input_ids"]
-        attention_mask = tokenized_full["attention_mask"]
-        labels = input_ids.clone()
-
-        source_lengths = tokenized_source["attention_mask"].sum(dim=1)
-        for i in range(len(batch)):
-            labels[i, : source_lengths[i]] = -100
-
-        labels[attention_mask == 0] = -100
+        input_ids = pad_sequence(input_rows, batch_first=True, padding_value=pad_id)
+        labels = pad_sequence(label_rows, batch_first=True, padding_value=-100)
+        attention_mask = pad_sequence(mask_rows, batch_first=True, padding_value=0)
 
         return {
             "input_ids": input_ids,
@@ -266,6 +263,7 @@ class ReconstructionModel(nn.Module):
         self,
         model_name_or_path: str,
         extractor_name_or_path: str,
+        extractor_max_length: int = 256,
         torch_dtype: torch.dtype | str = "auto",
         lora_r: int = 16,
         lora_alpha: int = 32,
@@ -304,6 +302,7 @@ class ReconstructionModel(nn.Module):
             p.requires_grad = False
 
         self.extractor_name_or_path = extractor_name_or_path
+        self.extractor_max_length = extractor_max_length
 
     def forward(self, *args, **kwargs):
         kwargs["output_hidden_states"] = True
@@ -352,10 +351,11 @@ class ReconstructionModel(nn.Module):
         tok = self.extractor_tokenizer(
             texts,
             padding=True,
-            truncation=True,
-            max_length=256,
+            truncation=False,
             return_tensors="pt",
         )
+        if tok["attention_mask"].sum(dim=1).max().item() > self.extractor_max_length:
+            raise ValueError("A complete response exceeds extractor_max_length.")
         tok = {k: v.to(device) for k, v in tok.items()}
 
         out = self.extractor(**tok, return_dict=True)
@@ -383,6 +383,7 @@ class ReconstructionModel(nn.Module):
                 {
                     "type": "mle_plus_sampled_response_cosine_reinforce",
                     "extractor_name_or_path": self.extractor_name_or_path,
+                    "extractor_max_length": self.extractor_max_length,
                 },
                 f,
                 ensure_ascii=False,
@@ -406,6 +407,12 @@ class ReconstructionTrainer(Trainer):
             raise ValueError(
                 "generation_tokenizer is required for sampled cosine loss."
             )
+        if lambda_mle < 0.0 or lambda_cos < 0.0:
+            raise ValueError("lambda_mle and lambda_cos must be nonnegative.")
+        if cosine_max_new_tokens <= 0:
+            raise ValueError("cosine_max_new_tokens must be positive.")
+        if not 0.0 <= reward_baseline_momentum < 1.0:
+            raise ValueError("reward_baseline_momentum must be in [0, 1).")
         self.lambda_mle = lambda_mle
         self.lambda_cos = lambda_cos
         self.generation_tokenizer = generation_tokenizer
@@ -432,7 +439,7 @@ class ReconstructionTrainer(Trainer):
             source_batch = tokenizer(
                 source_texts,
                 padding=True,
-                truncation=True,
+                truncation=False,
                 return_tensors="pt",
             )
         finally:
@@ -537,7 +544,6 @@ class ReconstructionTrainer(Trainer):
             input_ids=inputs["input_ids"],
             attention_mask=inputs["attention_mask"],
         )
-
         shift_logits = outputs.logits[:, :-1, :].float()
         shift_labels = inputs["labels"][:, 1:]
         target_mask = shift_labels.ne(-100)
@@ -612,6 +618,7 @@ class ReconstructionTrainer(Trainer):
 class ModelArguments:
     model_name_or_path: str = field(default="")
     extractor_name_or_path: str = field(default="")
+    extractor_max_length: int = field(default=256)
     torch_dtype: str = field(default="auto")
     lora_r: int = field(default=16)
     lora_alpha: int = field(default=32)
@@ -777,6 +784,7 @@ def main():
     print("[INFO] Parsed arguments successfully.")
     print(f"[INFO] model_name_or_path      = {model_args.model_name_or_path}")
     print(f"[INFO] extractor_name_or_path = {model_args.extractor_name_or_path}")
+    print(f"[INFO] extractor_max_length   = {model_args.extractor_max_length}")
     print(f"[INFO] torch_dtype            = {model_args.torch_dtype}")
     print(f"[INFO] dataset_name           = {data_args.dataset_name}")
     print(f"[INFO] train_file             = {data_args.train_file}")
@@ -852,6 +860,7 @@ def main():
     model = ReconstructionModel(
         model_name_or_path=model_args.model_name_or_path,
         extractor_name_or_path=model_args.extractor_name_or_path,
+        extractor_max_length=model_args.extractor_max_length,
         torch_dtype=resolve_torch_dtype(model_args.torch_dtype),
         lora_r=model_args.lora_r,
         lora_alpha=model_args.lora_alpha,

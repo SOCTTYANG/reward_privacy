@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from dataclasses import asdict, dataclass
 from typing import Dict, List, Tuple
@@ -304,11 +305,12 @@ class DualRewardScorer:
         text = format_prompt_response(prompt, response)
         tok = self.tokenizer(
             text,
-            truncation=True,
-            max_length=self.max_length,
+            truncation=False,
             padding=True,
             return_tensors="pt",
         )
+        if tok["attention_mask"].sum(dim=1).max().item() > self.max_length:
+            raise ValueError("A complete (x, candidate) pair exceeds max_length.")
         tok = {k: v.to(self.device) for k, v in tok.items()}
 
         outputs = self.model(
@@ -337,12 +339,17 @@ def select_lowest_reward(
     x: str,
     candidate_y_minus_list: List[str],
 ) -> Tuple[List[float], List[float], List[float], int]:
+    if not candidate_y_minus_list:
+        raise ValueError("candidate_y_minus_list must contain at least one response.")
+
     candidate_reward_scores = []
     help_scores = []
     safe_scores = []
 
     for y_hat_i_minus in candidate_y_minus_list:
         r_hat_i, help_score, safe_score = scorer.score(x, y_hat_i_minus)
+        if not math.isfinite(r_hat_i):
+            raise ValueError("The target reward model returned a non-finite score.")
         candidate_reward_scores.append(r_hat_i)
         help_scores.append(help_score)
         safe_scores.append(safe_score)

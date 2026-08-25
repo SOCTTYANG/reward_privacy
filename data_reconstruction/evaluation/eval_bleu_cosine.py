@@ -83,10 +83,11 @@ class EmbeddingExtractor:
         tokens = self.tokenizer(
             list(texts),
             padding=True,
-            truncation=True,
-            max_length=self.max_length,
+            truncation=False,
             return_tensors="pt",
         )
+        if tokens["attention_mask"].sum(dim=1).max().item() > self.max_length:
+            raise ValueError("A complete response exceeds embed_max_length.")
         tokens = {key: value.to(self.device) for key, value in tokens.items()}
         outputs = self.model(**tokens, return_dict=True)
         if getattr(outputs, "last_hidden_state", None) is not None:

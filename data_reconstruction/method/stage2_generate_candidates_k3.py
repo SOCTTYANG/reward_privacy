@@ -79,6 +79,10 @@ def generate_candidate_yminus(
 ) -> List[str]:
     if num_candidates <= 0:
         raise ValueError("num_candidates must be positive.")
+    if max_source_tokens <= 0:
+        raise ValueError("max_source_tokens must be positive.")
+    if max_new_tokens <= 0:
+        raise ValueError("max_new_tokens must be positive.")
 
     source_text = build_source_text_with_budget(
         x=x,
@@ -130,7 +134,6 @@ def generate_candidate_yminus(
 
     generated_ids = sequences[:, prompt_width:]
     candidates = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-
     return [candidate.strip() for candidate in candidates]
 
 
