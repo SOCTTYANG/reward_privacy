@@ -1,7 +1,10 @@
 import argparse, copy, torch
+import sys
+from pathlib import Path
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from paper_mia import advantages, encode_prompt_responses, gradient_l2, load_records, ppo_clipped_loss, save_json, sequence_logprob
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tool.paper_mia import advantages, encode_prompt_responses, gradient_l2, load_records, ppo_clipped_loss, save_json, sequence_logprob
 
 def main():
     p=argparse.ArgumentParser(); p.add_argument("--input_path",required=True); p.add_argument("--base_model",required=True); p.add_argument("--output_path",required=True)

@@ -1,5 +1,8 @@
 import argparse, csv, math
-from paper_mia import load_records, save_json
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tool.paper_mia import load_records, save_json
 
 def auc_with_ties(labels,scores):
     positives=sum(labels); negatives=len(labels)-positives

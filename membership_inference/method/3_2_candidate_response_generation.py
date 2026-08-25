@@ -1,7 +1,10 @@
 import argparse, gc, torch
+import sys
+from pathlib import Path
 from transformers import AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer
 from peft import PeftModel
-from paper_mia import load_records, save_json, score_reward_pairs
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tool.paper_mia import load_records, save_json, score_reward_pairs
 
 def generation_text(tokenizer,x):
     if getattr(tokenizer,"chat_template",None):
