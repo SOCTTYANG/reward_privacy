@@ -1,6 +1,0 @@
-torch>=2.1
-transformers>=4.38
-peft>=0.9
-tqdm>=4.66
-numpy>=1.24
-matplotlib>=3.7
