@@ -4,7 +4,7 @@ from pathlib import Path
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from peft import PeftModel
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tool.paper_mia import load_records, normalize_triplet, save_json, score_reward_pairs
+from tool.paper_mia import load_data, normalize_triplet, save_artifact, score_reward_pairs
 
 def main():
     p=argparse.ArgumentParser()
@@ -14,7 +14,8 @@ def main():
     p.add_argument("--seed",type=int,default=42); p.add_argument("--batch_size",type=int,default=8); p.add_argument("--max_length",type=int,default=512)
     a=p.parse_args(); rng=random.Random(a.seed); data=[]
     for membership,path,limit in (("member",a.member_path,a.member_size),("nonmember",a.nonmember_path,a.nonmember_size)):
-        raw=load_records(path)
+        raw=load_data(path)
+        if not isinstance(raw,list): raise ValueError(f"{path} must contain a list of target triplets")
         if limit is not None:
             if limit>len(raw): raise ValueError(f"{membership}: requested {limit}, available {len(raw)}")
             raw=rng.sample(raw,limit)
@@ -30,6 +31,7 @@ def main():
     rp=score_reward_pairs(model,tok,[(r["x"],r["y_plus"]) for r in data],a.batch_size,a.max_length,device)
     rm=score_reward_pairs(model,tok,[(r["x"],r["y_minus"]) for r in data],a.batch_size,a.max_length,device)
     for row,plus,minus in zip(data,rp,rm): row.update(r_plus=float(plus),r_minus=float(minus),reward_gap=float(plus-minus))
-    save_json(data,a.output_path); print(f"[DONE] Step 1 wrote {len(data)} records to {a.output_path}")
+    metadata={"stage":1,"reward_model":{"base_model":a.reward_base_model,"adapter_path":a.reward_adapter_path},"reward_max_length":a.max_length}
+    save_artifact(data,metadata,a.output_path); print(f"[DONE] Step 1 wrote {len(data)} records to {a.output_path}")
 
 if __name__=="__main__": main()
