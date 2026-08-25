@@ -1,4 +1,4 @@
-"""Build safety preference pairs from WildGuardMix's per-response labels.
+"""Build safety preference pairs from DefenderEvaluationDataset's per-response labels.
 
 For each prompt, a safe refusal (chosen) is paired with a harmful compliance
 (rejected).  The labels are used only while constructing the evaluation file;
@@ -17,6 +17,17 @@ from datasets import load_dataset
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--dataset_id",
+        required=True,
+        help="Dataset identifier for defender-evaluation-dataset.",
+    )
+    parser.add_argument(
+        "--dataset_config",
+        default=None,
+        help="Optional configuration name for defender-evaluation-dataset.",
+    )
+    parser.add_argument("--dataset_split", default="train")
     parser.add_argument("--output_path", required=True)
     parser.add_argument("--max_samples", type=int, default=500)
     parser.add_argument("--seed", type=int, default=42)
@@ -24,7 +35,7 @@ def parse_args():
 
 
 def main(args):
-    dataset = load_dataset("allenai/wildguardmix", "wildguardtrain", split="train")
+    dataset = load_dataset(args.dataset_id, args.dataset_config, split=args.dataset_split)
     by_prompt = defaultdict(list)
     for row in dataset:
         by_prompt[row["prompt"]].append(row)
@@ -51,7 +62,7 @@ def main(args):
     random.Random(args.seed).shuffle(pairs)
     pairs = pairs[:args.max_samples]
     if not pairs:
-        raise ValueError("No WildGuard safety preference pairs were constructed.")
+        raise ValueError("No defender-evaluation preference pairs were constructed.")
 
     os.makedirs(os.path.dirname(args.output_path) or ".", exist_ok=True)
     with open(args.output_path, "w", encoding="utf-8") as handle:

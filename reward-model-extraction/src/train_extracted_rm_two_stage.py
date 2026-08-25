@@ -67,7 +67,7 @@ def move_to_device(batch: Dict[str, Any], device: str) -> Dict[str, Any]:
 class PreferenceDataset(Dataset):
     def __init__(self, path: str, max_samples: Optional[int] = None, skip_samples: int = 0):
         # Apply skip/max after validation so the Stage-B source slice uses the
-        # same valid-triple indexing as prepare_hh_aux_disjoint.py.
+        # same valid-triple indexing as prepare_attacker_auxiliary_dataset_disjoint.py.
         raw = read_jsonl(path, max_samples=None)
 
         self.data = []
@@ -406,7 +406,7 @@ def train_stage_a_preference(
     }
 
     if eval_loader is not None:
-        print("========== Stage A Before Eval: HH Preference ==========")
+        print("========== Stage A Before Eval: Attacker Preference Preference ==========")
         before_metrics = evaluate_preference(
             model=model,
             dataloader=eval_loader,
@@ -482,7 +482,7 @@ def train_stage_a_preference(
         stage_metrics["epochs"].append(epoch_record)
 
     if eval_loader is not None:
-        print("========== Stage A After Eval: HH Preference ==========")
+        print("========== Stage A After Eval: Attacker Preference Preference ==========")
         after_metrics = evaluate_preference(
             model=model,
             dataloader=eval_loader,
@@ -519,7 +519,7 @@ def train_stage_b_regression(
         "score_normalization": {"mean": args.distill_score_mean, "std": args.distill_score_std},
     }
 
-    print("========== Stage B Before Eval: Dolly Scored Auxiliary ==========")
+    print("========== Stage B Before Eval: attacker-auxiliary-dataset Scored Auxiliary ==========")
     before_metrics = evaluate_regression(
         model=model,
         dataloader=eval_loader,
@@ -625,7 +625,7 @@ def train_stage_b_regression(
         epoch_record["eval"] = eval_metrics
         stage_metrics["epochs"].append(epoch_record)
 
-    print("========== Stage B After Eval: Dolly Scored Auxiliary ==========")
+    print("========== Stage B After Eval: attacker-auxiliary-dataset Scored Auxiliary ==========")
     after_metrics = evaluate_regression(
         model=model,
         dataloader=eval_loader,
@@ -650,10 +650,10 @@ def train(args) -> None:
 
     print("[INFO] Two-stage extracted reward model training")
     print(f"[INFO] student init model:      {args.student_model_path}")
-    print(f"[INFO] HH pref train path:     {args.hh_pref_train_path}")
-    print(f"[INFO] HH pref eval path:      {args.hh_pref_eval_path}")
+    print(f"[INFO] Attacker Preference pref train path:     {args.attacker_preference_dataset_train_path}")
+    print(f"[INFO] Attacker Preference pref eval path:      {args.attacker_preference_dataset_eval_path}")
     print(f"[INFO] scored aux path:        {args.scored_aux_path}")
-    print(f"[INFO] PKU pref eval path:     {args.pku_pref_eval_path}")
+    print(f"[INFO] Defender Evaluation pref eval path:     {args.defender_eval_eval_path}")
     print(f"[INFO] output dir:             {args.output_dir}")
     print(f"[INFO] device:                 {args.device}")
     print(f"[INFO] skip Stage A:           {args.skip_stage_a}")
@@ -672,40 +672,40 @@ def train(args) -> None:
 
     model.to(args.device)
 
-    # ========== Stage A data: HH preference ==========
-    hh_train_dataset = PreferenceDataset(
-        path=args.hh_pref_train_path,
-        max_samples=args.max_hh_train_samples,
+    # ========== Stage A data: Attacker Preference preference ==========
+    attacker_preference_train_dataset = PreferenceDataset(
+        path=args.attacker_preference_dataset_train_path,
+        max_samples=args.max_attacker_preference_train_samples,
     )
 
-    hh_eval_dataset = None
-    if args.hh_pref_eval_path is not None:
-        hh_eval_dataset = PreferenceDataset(
-            path=args.hh_pref_eval_path,
-            max_samples=args.max_hh_eval_samples,
+    attacker_preference_eval_dataset = None
+    if args.attacker_preference_dataset_eval_path is not None:
+        attacker_preference_eval_dataset = PreferenceDataset(
+            path=args.attacker_preference_dataset_eval_path,
+            max_samples=args.max_attacker_preference_eval_samples,
         )
 
-    print(f"[INFO] HH train samples = {len(hh_train_dataset)}")
-    if hh_eval_dataset is not None:
-        print(f"[INFO] HH eval samples  = {len(hh_eval_dataset)}")
+    print(f"[INFO] Attacker Preference train samples = {len(attacker_preference_train_dataset)}")
+    if attacker_preference_eval_dataset is not None:
+        print(f"[INFO] Attacker Preference eval samples  = {len(attacker_preference_eval_dataset)}")
 
     pref_collator = PreferenceCollator(
         tokenizer=tokenizer,
         max_length=args.max_length,
     )
 
-    hh_train_loader = DataLoader(
-        hh_train_dataset,
+    attacker_preference_train_loader = DataLoader(
+        attacker_preference_train_dataset,
         batch_size=args.pref_batch_size,
         shuffle=True,
         collate_fn=pref_collator,
         num_workers=0,
     )
 
-    hh_eval_loader = None
-    if hh_eval_dataset is not None:
-        hh_eval_loader = DataLoader(
-            hh_eval_dataset,
+    attacker_preference_eval_loader = None
+    if attacker_preference_eval_dataset is not None:
+        attacker_preference_eval_loader = DataLoader(
+            attacker_preference_eval_dataset,
             batch_size=args.eval_batch_size,
             shuffle=False,
             collate_fn=pref_collator,
@@ -795,18 +795,18 @@ def train(args) -> None:
             num_workers=0,
         )
 
-    # ========== Final PKU eval data ==========
-    pku_eval_loader = None
-    if args.pku_pref_eval_path is not None:
-        pku_eval_dataset = PreferenceDataset(
-            path=args.pku_pref_eval_path,
-            max_samples=args.max_pku_eval_samples,
+    # ========== Final Defender Evaluation eval data ==========
+    defender_evaluation_eval_loader = None
+    if args.defender_eval_eval_path is not None:
+        defender_evaluation_eval_dataset = PreferenceDataset(
+            path=args.defender_eval_eval_path,
+            max_samples=args.max_defender_evaluation_eval_samples,
         )
 
-        print(f"[INFO] PKU eval samples = {len(pku_eval_dataset)}")
+        print(f"[INFO] Defender Evaluation eval samples = {len(defender_evaluation_eval_dataset)}")
 
-        pku_eval_loader = DataLoader(
-            pku_eval_dataset,
+        defender_evaluation_eval_loader = DataLoader(
+            defender_evaluation_eval_dataset,
             batch_size=args.eval_batch_size,
             shuffle=False,
             collate_fn=pref_collator,
@@ -816,48 +816,48 @@ def train(args) -> None:
     final_metrics: Dict[str, Any] = {}
 
     # ========== Optional initial eval ==========
-    if pku_eval_loader is not None:
-        print("========== Initial Eval: PKU Preference ==========")
-        initial_pku_metrics = evaluate_preference(
+    if defender_evaluation_eval_loader is not None:
+        print("========== Initial Eval: Defender Evaluation Preference ==========")
+        initial_defender_evaluation_metrics = evaluate_preference(
             model=model,
-            dataloader=pku_eval_loader,
+            dataloader=defender_evaluation_eval_loader,
             device=args.device,
-            desc="Initial PKU preference eval",
+            desc="Initial Defender Evaluation preference eval",
         )
-        print(initial_pku_metrics)
-        final_metrics["initial_pku_preference"] = initial_pku_metrics
+        print(initial_defender_evaluation_metrics)
+        final_metrics["initial_defender_evalerence"] = initial_defender_evaluation_metrics
 
     # ========== Stage A ==========
     if (not args.skip_stage_a) and args.pref_epochs > 0:
-        print("\n================ Stage A: HH Preference Pretraining ================")
+        print("\n================ Stage A: Attacker Preference Preference Pretraining ================")
         stage_a_metrics = train_stage_a_preference(
             model=model,
-            train_loader=hh_train_loader,
-            eval_loader=hh_eval_loader,
+            train_loader=attacker_preference_train_loader,
+            eval_loader=attacker_preference_eval_loader,
             args=args,
         )
-        final_metrics["stage_a_hh_preference"] = stage_a_metrics
+        final_metrics["stage_a_attacker_preference_dataseterence"] = stage_a_metrics
 
-        stage_a_output_dir = os.path.join(args.output_dir, "after_stage_a_hh_preference")
+        stage_a_output_dir = os.path.join(args.output_dir, "after_stage_a_attacker_preference_dataseterence")
         os.makedirs(stage_a_output_dir, exist_ok=True)
         model.save_pretrained(stage_a_output_dir)
         tokenizer.save_pretrained(stage_a_output_dir)
         print(f"[OK] Stage A checkpoint saved to: {stage_a_output_dir}")
 
-        if pku_eval_loader is not None:
-            print("========== After Stage A Eval: PKU Preference ==========")
-            pku_after_a = evaluate_preference(
+        if defender_evaluation_eval_loader is not None:
+            print("========== After Stage A Eval: Defender Evaluation Preference ==========")
+            defender_evaluation_after_a = evaluate_preference(
                 model=model,
-                dataloader=pku_eval_loader,
+                dataloader=defender_evaluation_eval_loader,
                 device=args.device,
-                desc="After Stage A PKU preference eval",
+                desc="After Stage A Defender Evaluation preference eval",
             )
-            print(pku_after_a)
-            final_metrics["after_stage_a_pku_preference"] = pku_after_a
+            print(defender_evaluation_after_a)
+            final_metrics["after_stage_a_defender_evalerence"] = defender_evaluation_after_a
 
     # ========== Stage B ==========
     if (not args.skip_stage_b) and args.distill_epochs > 0:
-        print("\n================ Stage B: Dolly Scored Auxiliary Distillation ================")
+        print("\n================ Stage B: attacker-auxiliary-dataset Scored Auxiliary Distillation ================")
         stage_b_metrics = train_stage_b_regression(
             model=model,
             train_loader=aux_train_loader,
@@ -865,32 +865,32 @@ def train(args) -> None:
             teacher_pair_loader=teacher_pair_loader,
             args=args,
         )
-        final_metrics["stage_b_dolly_regression"] = stage_b_metrics
+        final_metrics["stage_b_attacker_auxiliary_dataset_regression"] = stage_b_metrics
 
     # ========== Final eval ==========
-    if hh_eval_loader is not None:
-        print("========== Final Eval: HH Preference ==========")
-        final_hh_metrics = evaluate_preference(
+    if attacker_preference_eval_loader is not None:
+        print("========== Final Eval: Attacker Preference Preference ==========")
+        final_attacker_preference_metrics = evaluate_preference(
             model=model,
-            dataloader=hh_eval_loader,
+            dataloader=attacker_preference_eval_loader,
             device=args.device,
-            desc="Final HH preference eval",
+            desc="Final Attacker Preference preference eval",
         )
-        print(final_hh_metrics)
-        final_metrics["final_hh_preference"] = final_hh_metrics
+        print(final_attacker_preference_metrics)
+        final_metrics["final_attacker_preference_dataseterence"] = final_attacker_preference_metrics
 
-    if pku_eval_loader is not None:
-        print("========== Final Eval: PKU Preference ==========")
-        final_pku_metrics = evaluate_preference(
+    if defender_evaluation_eval_loader is not None:
+        print("========== Final Eval: Defender Evaluation Preference ==========")
+        final_defender_evaluation_metrics = evaluate_preference(
             model=model,
-            dataloader=pku_eval_loader,
+            dataloader=defender_evaluation_eval_loader,
             device=args.device,
-            desc="Final PKU preference eval",
+            desc="Final Defender Evaluation preference eval",
         )
-        print(final_pku_metrics)
-        final_metrics["final_pku_preference"] = final_pku_metrics
+        print(final_defender_evaluation_metrics)
+        final_metrics["final_defender_evalerence"] = final_defender_evaluation_metrics
 
-    print("========== Final Eval: Dolly Scored Auxiliary Regression ==========")
+    print("========== Final Eval: attacker-auxiliary-dataset Scored Auxiliary Regression ==========")
     final_aux_metrics = evaluate_regression(
         model=model,
         dataloader=aux_eval_loader,
@@ -898,7 +898,7 @@ def train(args) -> None:
         desc="Final auxiliary regression eval",
     )
     print(final_aux_metrics)
-    final_metrics["final_dolly_regression"] = final_aux_metrics
+    final_metrics["final_attacker_auxiliary_dataset_regression"] = final_aux_metrics
 
     # ========== Save ==========
     os.makedirs(args.output_dir, exist_ok=True)
@@ -917,19 +917,19 @@ def parse_args():
 
     parser.add_argument("--student_model_path", type=str, required=True)
 
-    parser.add_argument("--hh_pref_train_path", type=str, required=True)
-    parser.add_argument("--hh_pref_eval_path", type=str, default=None)
+    parser.add_argument("--attacker_preference_dataset_train_path", type=str, required=True)
+    parser.add_argument("--attacker_preference_dataset_eval_path", type=str, default=None)
 
     parser.add_argument("--scored_aux_path", type=str, required=True)
 
-    parser.add_argument("--pku_pref_eval_path", type=str, default=None)
+    parser.add_argument("--defender_eval_eval_path", type=str, default=None)
 
     parser.add_argument("--output_dir", type=str, required=True)
 
-    parser.add_argument("--max_hh_train_samples", type=int, default=5000)
-    parser.add_argument("--max_hh_eval_samples", type=int, default=1000)
+    parser.add_argument("--max_attacker_preference_train_samples", type=int, default=5000)
+    parser.add_argument("--max_attacker_preference_eval_samples", type=int, default=1000)
     parser.add_argument("--max_aux_samples", type=int, default=5000)
-    parser.add_argument("--max_pku_eval_samples", type=int, default=1000)
+    parser.add_argument("--max_defender_evaluation_eval_samples", type=int, default=1000)
 
     parser.add_argument("--aux_train_ratio", type=float, default=0.9)
 
@@ -965,7 +965,7 @@ def parse_args():
     parser.add_argument(
         "--skip_stage_a",
         action="store_true",
-        help="Skip Stage A HH preference pretraining and run Stage B only.",
+        help="Skip Stage A Attacker Preference preference pretraining and run Stage B only.",
     )
 
     parser.add_argument(

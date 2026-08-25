@@ -8,9 +8,9 @@ conda activate rm_extract
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-PROJECT_DIR="${PROJECT_DIR:-/mnt/model_data/projects/bai-rm-extraction-exp}"
+PROJECT_DIR="${PROJECT_DIR:-/path/to/code}"
 # The clean RoBERTa-base checkpoint is retained on the original data mount.
-STUDENT_MODEL="${STUDENT_MODEL:-/mnt/bai_data/projects/bai-rm-extraction-exp/models/roberta-base}"
+STUDENT_MODEL="${STUDENT_MODEL:-/path/to/code/models/roberta-base}"
 
 MODEL_PATH="$1"
 RUN_NAME="$2"
@@ -32,14 +32,14 @@ python "${DEFENSE_DIR}/train_target_rm_llama_lora_dp.py" \
 
 python -m src.score_aux_with_llama_lora \
   --base_model_path "${MODEL_PATH}" --lora_adapter_path "${TARGET_DIR}" \
-  --aux_path "${PROJECT_DIR}/data/aux_dolly.jsonl" --output_path "${SCORED_AUX}" \
+  --aux_path "${PROJECT_DIR}/data/attacker_auxiliary_dataset.jsonl" --output_path "${SCORED_AUX}" \
   --target_model_name "dp_eps8_${RUN_NAME}" --max_samples 5000 --batch_size 1 --max_length 512 --bf16
 
 python -m src.train_extracted_rm_two_stage \
-  --student_model_path "${STUDENT_MODEL}" --hh_pref_train_path "${PROJECT_DIR}/data/hh_pref_train.jsonl" \
-  --hh_pref_eval_path "${PROJECT_DIR}/data/hh_pref_test.jsonl" --scored_aux_path "${SCORED_AUX}" \
-  --pku_pref_eval_path "${PROJECT_DIR}/data/test.jsonl" --output_dir "${STUDENT_DIR}" \
-  --max_hh_train_samples 5000 --max_hh_eval_samples 1000 --max_aux_samples 5000 --max_pku_eval_samples 1000 \
+  --student_model_path "${STUDENT_MODEL}" --attacker_preference_dataset_train_path "${PROJECT_DIR}/data/attacker_preference_dataset_train.jsonl" \
+  --attacker_preference_dataset_eval_path "${PROJECT_DIR}/data/attacker_preference_dataset_test.jsonl" --scored_aux_path "${SCORED_AUX}" \
+  --defender_eval_eval_path "${PROJECT_DIR}/data/test.jsonl" --output_dir "${STUDENT_DIR}" \
+  --max_attacker_preference_train_samples 5000 --max_attacker_preference_eval_samples 1000 --max_aux_samples 5000 --max_defender_evaluation_eval_samples 1000 \
   --aux_train_ratio 0.9 --pref_epochs 1 --distill_epochs 1 --pref_batch_size 8 --distill_batch_size 8 \
   --eval_batch_size 16 --max_length 512 --pref_lr 2e-5 --distill_lr 1e-5 --weight_decay 0.01 \
   --warmup_ratio 0.03 --grad_clip 1.0 --seed 42

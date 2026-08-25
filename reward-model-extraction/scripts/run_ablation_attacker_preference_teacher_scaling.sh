@@ -6,12 +6,12 @@ conda activate rm_extract
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-PROJECT_DIR=/mnt/model_data/projects/bai-rm-extraction-exp
+PROJECT_DIR=/path/to/code
 
 cd ${PROJECT_DIR}
 
 
-STUDENT=/mnt/bai_data/projects/bai-rm-extraction-exp/models/roberta-base
+STUDENT=/path/to/code/models/roberta-base
 
 
 run_exp(){
@@ -29,15 +29,15 @@ echo "========================================="
 # Only Pretrain
 python -m src.train_extracted_rm_two_stage \
  --student_model_path ${STUDENT} \
- --hh_pref_train_path ${PROJECT_DIR}/data/hh_pref_train.jsonl \
- --hh_pref_eval_path ${PROJECT_DIR}/data/hh_pref_test.jsonl \
+ --attacker_preference_dataset_train_path ${PROJECT_DIR}/data/attacker_preference_dataset_train.jsonl \
+ --attacker_preference_dataset_eval_path ${PROJECT_DIR}/data/attacker_preference_dataset_test.jsonl \
  --scored_aux_path ${PROJECT_DIR}/data/${AUX} \
- --pku_pref_eval_path ${PROJECT_DIR}/data/test.jsonl \
+ --defender_eval_eval_path ${PROJECT_DIR}/data/test.jsonl \
  --output_dir ${PROJECT_DIR}/output/${NAME}_only_pretrain \
- --max_hh_train_samples 5000 \
- --max_hh_eval_samples 1000 \
+ --max_attacker_preference_train_samples 5000 \
+ --max_attacker_preference_eval_samples 1000 \
  --max_aux_samples 5000 \
- --max_pku_eval_samples 1000 \
+ --max_defender_evaluation_eval_samples 1000 \
  --aux_train_ratio 0.9 \
  --pref_epochs 1 \
  --distill_epochs 1 \
@@ -58,15 +58,15 @@ python -m src.train_extracted_rm_two_stage \
 # Only Distill
 python -m src.train_extracted_rm_two_stage \
  --student_model_path ${STUDENT} \
- --hh_pref_train_path ${PROJECT_DIR}/data/hh_pref_train.jsonl \
- --hh_pref_eval_path ${PROJECT_DIR}/data/hh_pref_test.jsonl \
+ --attacker_preference_dataset_train_path ${PROJECT_DIR}/data/attacker_preference_dataset_train.jsonl \
+ --attacker_preference_dataset_eval_path ${PROJECT_DIR}/data/attacker_preference_dataset_test.jsonl \
  --scored_aux_path ${PROJECT_DIR}/data/${AUX} \
- --pku_pref_eval_path ${PROJECT_DIR}/data/test.jsonl \
+ --defender_eval_eval_path ${PROJECT_DIR}/data/test.jsonl \
  --output_dir ${PROJECT_DIR}/output/${NAME}_only_distill \
- --max_hh_train_samples 5000 \
- --max_hh_eval_samples 1000 \
+ --max_attacker_preference_train_samples 5000 \
+ --max_attacker_preference_eval_samples 1000 \
  --max_aux_samples 5000 \
- --max_pku_eval_samples 1000 \
+ --max_defender_evaluation_eval_samples 1000 \
  --aux_train_ratio 0.9 \
  --pref_epochs 1 \
  --distill_epochs 1 \
@@ -89,25 +89,25 @@ python -m src.train_extracted_rm_two_stage \
 run_exp \
 target_rm_llama2_13b_full_margin5_e1 \
 scored_aux_llama2_13b_full_margin5_e1.jsonl \
-ablation_hh_llama2_13b_roberta
+ablation_attacker_preference_llama2_13b_roberta
 
 
 run_exp \
 target_rm_llama32_3b_full_margin5_e1 \
 scored_aux_llama32_3b_full_margin5_e1.jsonl \
-ablation_hh_llama32_3b_roberta
+ablation_attacker_preference_llama32_3b_roberta
 
 
 run_exp \
 target_rm_mistral_7b_full_margin5_e1 \
 scored_aux_mistral_7b_full_margin5_e1.jsonl \
-ablation_hh_mistral_7b_roberta
+ablation_attacker_preference_mistral_7b_roberta
 
 
 run_exp \
 target_rm_qwen3_8b_full_margin5_e1 \
 scored_aux_qwen3_8b_full_margin5_e1.jsonl \
-ablation_hh_qwen3_8b_roberta
+ablation_attacker_preference_qwen3_8b_roberta
 
 
 echo "ALL ABLATIONS DONE"

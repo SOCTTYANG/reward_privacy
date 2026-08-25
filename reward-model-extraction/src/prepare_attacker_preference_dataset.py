@@ -17,9 +17,9 @@ def save_jsonl(rows: List[Dict[str, Any]], path: str) -> None:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def split_hh_text(text: str) -> Tuple[str, str]:
+def split_attacker_preference_text(text: str) -> Tuple[str, str]:
     """
-    HH-RLHF 的 chosen/rejected 通常是完整对话文本：
+    attacker-preference-dataset 的 chosen/rejected 通常是完整对话文本：
       Human: ...
       Assistant: ...
 
@@ -53,13 +53,13 @@ def split_hh_text(text: str) -> Tuple[str, str]:
 
 def convert_one(example: Dict[str, Any]) -> Optional[Dict[str, str]]:
     if "chosen" not in example or "rejected" not in example:
-        raise KeyError(f"HH example must contain chosen/rejected. Keys: {list(example.keys())}")
+        raise KeyError(f"Attacker Preference example must contain chosen/rejected. Keys: {list(example.keys())}")
 
     chosen_text = str(example["chosen"])
     rejected_text = str(example["rejected"])
 
-    prompt_c, chosen_resp = split_hh_text(chosen_text)
-    prompt_r, rejected_resp = split_hh_text(rejected_text)
+    prompt_c, chosen_resp = split_attacker_preference_text(chosen_text)
+    prompt_r, rejected_resp = split_attacker_preference_text(rejected_text)
 
     # 正常情况下 chosen/rejected 的 prompt 应该相同。
     # 如果不同，优先使用 chosen 的 prompt；这类样本不会直接丢弃，避免损失太多数据。
@@ -79,9 +79,9 @@ def convert_one(example: Dict[str, Any]) -> Optional[Dict[str, str]]:
     }
 
 
-def load_hh_split(dataset_name: str, data_dirs: List[str], split: str):
+def load_attacker_preference_split(dataset_name: str, data_dirs: List[str], split: str):
     """
-    HH-RLHF 有多个子目录：
+    attacker-preference-dataset 有多个子目录：
       - helpful-base
       - helpful-online
       - helpful-rejection-sampled
@@ -108,7 +108,7 @@ def convert_split(
 ) -> List[Dict[str, str]]:
     rows = []
 
-    for ex in tqdm(raw_dataset, desc="Converting HH"):
+    for ex in tqdm(raw_dataset, desc="Converting Attacker Preference"):
         item = convert_one(ex)
 
         if item is None:
@@ -125,7 +125,7 @@ def convert_split(
 def main() -> None:
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--dataset_name", type=str, default="Anthropic/hh-rlhf")
+    parser.add_argument("--dataset_name", type=str, default="attacker-preference-dataset")
     parser.add_argument("--output_dir", type=str, required=True)
 
     parser.add_argument(
@@ -134,7 +134,7 @@ def main() -> None:
         nargs="+",
         default=["helpful-base"],
         help=(
-            "HH-RLHF subdirectories. Recommended for Exp1: helpful-base. "
+            "attacker-preference-dataset subdirectories. Recommended for Exp1: helpful-base. "
             "Optional: helpful-base helpful-online helpful-rejection-sampled"
         ),
     )
@@ -144,13 +144,13 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    train_raw = load_hh_split(
+    train_raw = load_attacker_preference_split(
         dataset_name=args.dataset_name,
         data_dirs=args.data_dirs,
         split="train",
     )
 
-    test_raw = load_hh_split(
+    test_raw = load_attacker_preference_split(
         dataset_name=args.dataset_name,
         data_dirs=args.data_dirs,
         split="test",
@@ -162,14 +162,14 @@ def main() -> None:
     train_rows = convert_split(train_raw, args.max_train_samples)
     test_rows = convert_split(test_raw, args.max_test_samples)
 
-    train_path = os.path.join(args.output_dir, "hh_pref_train.jsonl")
-    test_path = os.path.join(args.output_dir, "hh_pref_test.jsonl")
+    train_path = os.path.join(args.output_dir, "attacker_preference_dataset_train.jsonl")
+    test_path = os.path.join(args.output_dir, "attacker_preference_dataset_test.jsonl")
 
     save_jsonl(train_rows, train_path)
     save_jsonl(test_rows, test_path)
 
-    print(f"[OK] saved HH train: {train_path}, n={len(train_rows)}")
-    print(f"[OK] saved HH test:  {test_path}, n={len(test_rows)}")
+    print(f"[OK] saved Attacker Preference train: {train_path}, n={len(train_rows)}")
+    print(f"[OK] saved Attacker Preference test:  {test_path}, n={len(test_rows)}")
 
     if train_rows:
         print("[INFO] first converted example:")

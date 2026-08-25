@@ -29,7 +29,7 @@ def build_prompt(instruction: str, context: str) -> str:
 
 def convert_one(example: Dict[str, Any]) -> Dict[str, str]:
     """
-    Dolly 15K 常见字段：
+    attacker-auxiliary-dataset 15K 常见字段：
       - instruction
       - context
       - response
@@ -64,7 +64,7 @@ def main() -> None:
     parser.add_argument(
         "--dataset_name",
         type=str,
-        default="databricks/databricks-dolly-15k",
+        default="attacker-auxiliary-dataset",
     )
     parser.add_argument(
         "--output_path",
@@ -101,7 +101,7 @@ def main() -> None:
 
     rows = []
 
-    for ex in tqdm(raw, desc="Converting Dolly aux data"):
+    for ex in tqdm(raw, desc="Converting attacker-auxiliary-dataset aux data"):
         item = convert_one(ex)
 
         if args.remove_empty:

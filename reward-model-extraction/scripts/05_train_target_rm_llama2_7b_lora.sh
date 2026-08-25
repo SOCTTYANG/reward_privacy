@@ -10,10 +10,10 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # =========================
 # Cache paths on data disk
 # =========================
-export HF_HOME=/mnt/bai_data/cache/huggingface
-export HF_DATASETS_CACHE=/mnt/bai_data/cache/huggingface/datasets
-export TRANSFORMERS_CACHE=/mnt/bai_data/cache/huggingface/transformers
-export TORCH_HOME=/mnt/bai_data/cache/torch
+export HF_HOME=/path/to/code-data/cache/huggingface
+export HF_DATASETS_CACHE=/path/to/code-data/cache/huggingface/datasets
+export TRANSFORMERS_CACHE=/path/to/code-data/cache/huggingface/transformers
+export TORCH_HOME=/path/to/code-data/cache/torch
 
 mkdir -p ${HF_HOME}
 mkdir -p ${HF_DATASETS_CACHE}
@@ -23,8 +23,8 @@ mkdir -p ${TORCH_HOME}
 # =========================
 # Project paths
 # =========================
-PROJECT_DIR=/mnt/bai_data/projects/bai-rm-extraction-exp
-LLAMA2_BASE=/home/vipuser/Desktop/model/llama2-7b
+PROJECT_DIR=/path/to/code
+LLAMA2_BASE=/path/to/target-model/llama2-7b
 
 cd ${PROJECT_DIR}
 

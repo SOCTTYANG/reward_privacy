@@ -68,7 +68,7 @@ def convert_one(example: Dict[str, Any], preference_type: str) -> Dict[str, str]
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset_name", type=str, default="PKU-Alignment/PKU-SafeRLHF-30K")
+    parser.add_argument("--dataset_name", type=str, default="Defender Evaluation-Alignment/defender-evaluation-dataset-30K")
     parser.add_argument("--output_dir", type=str, required=True)
     parser.add_argument("--preference_type", type=str, default="helpful", choices=["helpful", "harmless"])
     parser.add_argument("--max_train_samples", type=int, default=None)

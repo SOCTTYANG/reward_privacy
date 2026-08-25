@@ -34,11 +34,11 @@ def convert(src, dst):
 if __name__ == "__main__":
 
     convert(
-        "/mnt/bai_data/yang-safe/data/pku_saferlhf_10k_triplet/train.jsonl",
-        "data/pku10k_pref_train.jsonl"
+        "/path/to/code-data/anonymous-safe/data/defender_evaluation_dataset_10k_triplet/train.jsonl",
+        "data/defender_evaluation_pref_train.jsonl"
     )
 
     convert(
-        "/mnt/bai_data/yang-safe/data/pku_saferlhf_10k_triplet/eval.jsonl",
-        "data/pku10k_pref_eval.jsonl"
+        "/path/to/code-data/anonymous-safe/data/defender_evaluation_dataset_10k_triplet/eval.jsonl",
+        "data/defender_evaluation_pref_eval.jsonl"
     )

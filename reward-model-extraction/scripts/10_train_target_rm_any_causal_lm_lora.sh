@@ -7,15 +7,15 @@ conda activate rm_extract
 export CUDA_VISIBLE_DEVICES=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-export HF_HOME=/mnt/bai_data/cache/huggingface
-export HF_DATASETS_CACHE=/mnt/bai_data/cache/huggingface/datasets
-export TRANSFORMERS_CACHE=/mnt/bai_data/cache/huggingface/transformers
-export TORCH_HOME=/mnt/bai_data/cache/torch
-export TMPDIR=/mnt/bai_data/tmp
+export HF_HOME=/path/to/code-data/cache/huggingface
+export HF_DATASETS_CACHE=/path/to/code-data/cache/huggingface/datasets
+export TRANSFORMERS_CACHE=/path/to/code-data/cache/huggingface/transformers
+export TORCH_HOME=/path/to/code-data/cache/torch
+export TMPDIR=/path/to/code-data/tmp
 
 mkdir -p ${HF_HOME} ${HF_DATASETS_CACHE} ${TRANSFORMERS_CACHE} ${TORCH_HOME} ${TMPDIR}
 
-PROJECT_DIR=/mnt/bai_data/projects/bai-rm-extraction-exp
+PROJECT_DIR=/path/to/code
 
 MODEL_ID=${1}
 RUN_NAME=${2}

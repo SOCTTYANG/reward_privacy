@@ -7,11 +7,11 @@ conda activate rm_extract
 export CUDA_VISIBLE_DEVICES=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-export HF_HOME=/mnt/bai_data/cache/huggingface
-export HF_DATASETS_CACHE=/mnt/bai_data/cache/huggingface/datasets
-export TRANSFORMERS_CACHE=/mnt/bai_data/cache/huggingface/transformers
-export TORCH_HOME=/mnt/bai_data/cache/torch
-export TMPDIR=/mnt/bai_data/tmp
+export HF_HOME=/path/to/code-data/cache/huggingface
+export HF_DATASETS_CACHE=/path/to/code-data/cache/huggingface/datasets
+export TRANSFORMERS_CACHE=/path/to/code-data/cache/huggingface/transformers
+export TORCH_HOME=/path/to/code-data/cache/torch
+export TMPDIR=/path/to/code-data/tmp
 
 mkdir -p ${HF_HOME}
 mkdir -p ${HF_DATASETS_CACHE}
@@ -19,7 +19,7 @@ mkdir -p ${TRANSFORMERS_CACHE}
 mkdir -p ${TORCH_HOME}
 mkdir -p ${TMPDIR}
 
-PROJECT_DIR=/mnt/bai_data/projects/bai-rm-extraction-exp
+PROJECT_DIR=/path/to/code
 SCORED_AUX=${PROJECT_DIR}/data/scored_aux_llama2_7b_margin5_e2.jsonl
 
 cd ${PROJECT_DIR}
@@ -30,15 +30,15 @@ echo "======================================================"
 
 python -m src.train_extracted_rm_two_stage \
   --student_model_path ${PROJECT_DIR}/models/roberta-base \
-  --hh_pref_train_path ${PROJECT_DIR}/data/hh_pref_train.jsonl \
-  --hh_pref_eval_path ${PROJECT_DIR}/data/hh_pref_test.jsonl \
+  --attacker_preference_dataset_train_path ${PROJECT_DIR}/data/attacker_preference_dataset_train.jsonl \
+  --attacker_preference_dataset_eval_path ${PROJECT_DIR}/data/attacker_preference_dataset_test.jsonl \
   --scored_aux_path ${SCORED_AUX} \
-  --pku_pref_eval_path ${PROJECT_DIR}/data/test.jsonl \
+  --defender_eval_eval_path ${PROJECT_DIR}/data/test.jsonl \
   --output_dir ${PROJECT_DIR}/output/extracted_rm_exp3_margin5_llama2_7b_to_roberta \
-  --max_hh_train_samples 5000 \
-  --max_hh_eval_samples 1000 \
+  --max_attacker_preference_train_samples 5000 \
+  --max_attacker_preference_eval_samples 1000 \
   --max_aux_samples 5000 \
-  --max_pku_eval_samples 1000 \
+  --max_defender_evaluation_eval_samples 1000 \
   --aux_train_ratio 0.9 \
   --pref_epochs 1 \
   --distill_epochs 1 \
@@ -59,15 +59,15 @@ echo "======================================================"
 
 python -m src.train_extracted_rm_two_stage \
   --student_model_path ${PROJECT_DIR}/models/distilroberta-base \
-  --hh_pref_train_path ${PROJECT_DIR}/data/hh_pref_train.jsonl \
-  --hh_pref_eval_path ${PROJECT_DIR}/data/hh_pref_test.jsonl \
+  --attacker_preference_dataset_train_path ${PROJECT_DIR}/data/attacker_preference_dataset_train.jsonl \
+  --attacker_preference_dataset_eval_path ${PROJECT_DIR}/data/attacker_preference_dataset_test.jsonl \
   --scored_aux_path ${SCORED_AUX} \
-  --pku_pref_eval_path ${PROJECT_DIR}/data/test.jsonl \
+  --defender_eval_eval_path ${PROJECT_DIR}/data/test.jsonl \
   --output_dir ${PROJECT_DIR}/output/extracted_rm_exp4_margin5_llama2_7b_to_distilroberta \
-  --max_hh_train_samples 5000 \
-  --max_hh_eval_samples 1000 \
+  --max_attacker_preference_train_samples 5000 \
+  --max_attacker_preference_eval_samples 1000 \
   --max_aux_samples 5000 \
-  --max_pku_eval_samples 1000 \
+  --max_defender_evaluation_eval_samples 1000 \
   --aux_train_ratio 0.9 \
   --pref_epochs 1 \
   --distill_epochs 1 \

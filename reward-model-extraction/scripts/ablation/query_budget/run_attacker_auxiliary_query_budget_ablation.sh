@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Query-budget ablation for model extraction.
 #
-# Runs two independent experiments with 2,500 (50%) and 1,250 (25%) Dolly
+# Runs two independent experiments with 2,500 (50%) and 1,250 (25%) attacker-auxiliary-dataset
 # queries.  Each query budget is scored afresh by the fixed LLaMA2-7B teacher,
 # then split deterministically into 90% distillation train / 10% validation.
 
@@ -9,9 +9,9 @@
 # after the shell and Conda environment have been initialized.
 set -eo pipefail
 
-PROJECT_DIR="${PROJECT_DIR:-/mnt/model_data/projects/bai-rm-extraction-exp}"
+PROJECT_DIR="${PROJECT_DIR:-/path/to/code}"
 CONDA_ENV="${CONDA_ENV:-rm_extract}"
-TEACHER_BASE="${TEACHER_BASE:-/home/vipuser/Desktop/model/llama2-7b}"
+TEACHER_BASE="${TEACHER_BASE:-/path/to/target-model/llama2-7b}"
 TEACHER_ADAPTER="${TEACHER_ADAPTER:-${PROJECT_DIR}/output/target_rm_llama2_7b_lora_full_margin5_e2}"
 ROBERTA_MODEL="${ROBERTA_MODEL:-${PROJECT_DIR}/models/roberta-base}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${PROJECT_DIR}/output}"
@@ -34,15 +34,15 @@ run_student() {
 
   CUDA_VISIBLE_DEVICES="${GPU}" python -m src.train_extracted_rm_two_stage \
     --student_model_path "${ROBERTA_MODEL}" \
-    --hh_pref_train_path data/hh_pref_train.jsonl \
-    --hh_pref_eval_path data/hh_pref_test.jsonl \
+    --attacker_preference_dataset_train_path data/attacker_preference_dataset_train.jsonl \
+    --attacker_preference_dataset_eval_path data/attacker_preference_dataset_test.jsonl \
     --scored_aux_path "${scored_aux}" \
-    --pku_pref_eval_path data/test.jsonl \
+    --defender_eval_eval_path data/test.jsonl \
     --output_dir "${OUTPUT_ROOT}/ours_llama2_7b_roberta_base_${budget_name}" \
-    --max_hh_train_samples 5000 \
-    --max_hh_eval_samples 1000 \
+    --max_attacker_preference_train_samples 5000 \
+    --max_attacker_preference_eval_samples 1000 \
     --max_aux_samples "${query_count}" \
-    --max_pku_eval_samples 1000 \
+    --max_defender_evaluation_eval_samples 1000 \
     --aux_train_ratio 0.9 \
     --pref_epochs 1 \
     --distill_epochs 1 \
@@ -61,11 +61,11 @@ run_budget() {
   local query_count="$2"
   local scored_aux="data/scored_aux_llama2_7b_margin5_e2_${budget_name}.jsonl"
 
-  echo "[INFO] ${budget_name}: querying ${query_count} Dolly records"
+  echo "[INFO] ${budget_name}: querying ${query_count} attacker-auxiliary-dataset records"
   CUDA_VISIBLE_DEVICES="${GPU}" python -m src.score_aux_with_llama_lora \
     --base_model_path "${TEACHER_BASE}" \
     --lora_adapter_path "${TEACHER_ADAPTER}" \
-    --aux_path data/aux_dolly.jsonl \
+    --aux_path data/attacker_auxiliary_dataset.jsonl \
     --output_path "${scored_aux}" \
     --max_samples "${query_count}" \
     --batch_size 2 \

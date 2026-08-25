@@ -2,7 +2,7 @@
 
 set -e
 
-PROJECT=/mnt/model_data/projects/bai-rm-extraction-exp
+PROJECT=/path/to/code
 
 cd $PROJECT
 
@@ -10,14 +10,14 @@ cd $PROJECT
 mkdir -p logs
 
 
-TARGET_BASE=/home/vipuser/Desktop/model/llama2-7b
+TARGET_BASE=/path/to/target-model/llama2-7b
 
-TARGET_ADAPTER=/mnt/model_data/projects/bai-rm-extraction-exp/output/target_rm_llama2_7b_lora_full_margin5_e2
+TARGET_ADAPTER=/path/to/code/output/target_rm_llama2_7b_lora_full_margin5_e2
 
 AUX_DATA=data/scored_aux_llama2_7b_margin5_e2.jsonl
 
 
-OUT=/mnt/model_data/projects/bai-rm-extraction-exp/output
+OUT=/path/to/code/output
 
 
 
@@ -31,16 +31,16 @@ echo "===================================="
 ########################################
 
 CUDA_VISIBLE_DEVICES=0 python -m src.train_extracted_rm_two_stage \
- --student_model_path /mnt/model_data/models/deberta-v3-large \
- --hh_pref_train_path data/hh_pref_train.jsonl \
- --hh_pref_eval_path data/hh_pref_test.jsonl \
+ --student_model_path /path/to/models/deberta-v3-large \
+ --attacker_preference_dataset_train_path data/attacker_preference_dataset_train.jsonl \
+ --attacker_preference_dataset_eval_path data/attacker_preference_dataset_test.jsonl \
  --scored_aux_path $AUX_DATA \
- --pku_pref_eval_path data/test.jsonl \
+ --defender_eval_eval_path data/test.jsonl \
  --output_dir $OUT/ours_llama2_7b_deberta_v3_large \
- --max_hh_train_samples 5000 \
- --max_hh_eval_samples 1000 \
+ --max_attacker_preference_train_samples 5000 \
+ --max_attacker_preference_eval_samples 1000 \
  --max_aux_samples 5000 \
- --max_pku_eval_samples 1000 \
+ --max_defender_evaluation_eval_samples 1000 \
  --aux_train_ratio 0.9 \
  --pref_epochs 1 \
  --distill_epochs 1 \
@@ -62,16 +62,16 @@ PID1=$!
 ########################################
 
 CUDA_VISIBLE_DEVICES=1 python -m src.train_extracted_rm_two_stage \
- --student_model_path /mnt/model_data/models/deberta-v2-xlarge \
- --hh_pref_train_path data/hh_pref_train.jsonl \
- --hh_pref_eval_path data/hh_pref_test.jsonl \
+ --student_model_path /path/to/models/deberta-v2-xlarge \
+ --attacker_preference_dataset_train_path data/attacker_preference_dataset_train.jsonl \
+ --attacker_preference_dataset_eval_path data/attacker_preference_dataset_test.jsonl \
  --scored_aux_path $AUX_DATA \
- --pku_pref_eval_path data/test.jsonl \
+ --defender_eval_eval_path data/test.jsonl \
  --output_dir $OUT/ours_llama2_7b_deberta_v2_xlarge \
- --max_hh_train_samples 5000 \
- --max_hh_eval_samples 1000 \
+ --max_attacker_preference_train_samples 5000 \
+ --max_attacker_preference_eval_samples 1000 \
  --max_aux_samples 5000 \
- --max_pku_eval_samples 1000 \
+ --max_defender_evaluation_eval_samples 1000 \
  --aux_train_ratio 0.9 \
  --pref_epochs 1 \
  --distill_epochs 1 \

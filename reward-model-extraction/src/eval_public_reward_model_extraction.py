@@ -1,4 +1,4 @@
-"""Evaluate ranking agreement between Skywork RM and an extracted student RM."""
+"""Evaluate ranking agreement between PublicRewardModel RM and an extracted student RM."""
 from __future__ import annotations
 
 import argparse
@@ -82,7 +82,7 @@ def main(args):
         for index, path in enumerate(args.preference_path)
     }
     pairs = [pair for items in split_pairs.values() for pair in items]
-    # Skywork is loaded with its documented slow tokenizer; the student uses
+    # PublicRewardModel is loaded with its documented slow tokenizer; the student uses
     # the default fast tokenizer, exactly as train_extracted_rm_two_stage.py.
     target_tok, target_model = load(args.target_model_path, target_dtype, device, use_fast=False)
     # Stage-A/B training keeps this RoBERTa model in FP32.  Its final score

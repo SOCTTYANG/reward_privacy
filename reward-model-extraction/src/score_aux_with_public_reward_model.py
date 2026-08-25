@@ -1,6 +1,6 @@
 """Query a chat-template reward model on prompt/response records.
 
-This is intentionally separate from ``score_aux_with_target.py``: Skywork's
+This is intentionally separate from ``score_aux_with_target.py``: PublicRewardModel's
 reward model was trained on its tokenizer's chat template, not on the legacy
 ``### Prompt`` format used by the locally trained RMs.
 """
@@ -77,14 +77,14 @@ def main(args):
     loader = DataLoader(AuxDataset(args.aux_path, args.max_samples), batch_size=args.batch_size,
                         shuffle=False, num_workers=0, collate_fn=make_collator(tokenizer, args.max_length))
     rows = []
-    for batch in tqdm(loader, desc="Querying Skywork reward model"):
+    for batch in tqdm(loader, desc="Querying PublicRewardModel reward model"):
         raw_rows = batch.pop("raw_rows")
         logits = model(**{key: value.to(args.device) for key, value in batch.items()}).logits.view(-1)
         for row, score in zip(raw_rows, logits.float().cpu().tolist()):
             scored = {"prompt": str(row["prompt"]), "response": str(row["response"]),
                       "target_score": float(score), "category": str(row.get("category", "")),
                       "target_model": args.model_name}
-            # Preserve the pair provenance emitted by the disjoint-HH
+            # Preserve the pair provenance emitted by the disjoint-Attacker Preference
             # preparer so a run can be audited for cross-stage leakage.
             for key in ("source_pair_index",):
                 if key in row:
@@ -108,7 +108,7 @@ def parse_args():
     parser.add_argument("--model_path", required=True)
     parser.add_argument("--aux_path", required=True)
     parser.add_argument("--output_path", required=True)
-    parser.add_argument("--model_name", default="Skywork-Reward-Llama-3.1-8B")
+    parser.add_argument("--model_name", default="PublicRewardModel-Reward-Llama-3.1-8B")
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=2)
     parser.add_argument("--max_length", type=int, default=2048)

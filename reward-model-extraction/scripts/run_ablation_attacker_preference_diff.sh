@@ -6,7 +6,7 @@ conda activate rm_extract
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-PROJECT_DIR=/mnt/model_data/projects/bai-rm-extraction-exp
+PROJECT_DIR=/path/to/code
 
 cd ${PROJECT_DIR}
 
@@ -46,15 +46,15 @@ python scripts/eval_target_vs_substitute_diff.py \
 
 run_diff \
 output/target_rm_llama2_13b_full_margin5_e1 \
-output/ablation_hh_llama2_13b_roberta_only_pretrain \
-diff_ablation_hh_llama2_13b_only_pretrain \
-/mnt/model_data/models/llama2-13b-hf
+output/ablation_attacker_preference_llama2_13b_roberta_only_pretrain \
+diff_ablation_attacker_preference_llama2_13b_only_pretrain \
+/path/to/models/llama2-13b-hf
 
 run_diff \
 output/target_rm_llama2_13b_full_margin5_e1 \
-output/ablation_hh_llama2_13b_roberta_only_distill \
-diff_ablation_hh_llama2_13b_only_distill \
-/mnt/model_data/models/llama2-13b-hf
+output/ablation_attacker_preference_llama2_13b_roberta_only_distill \
+diff_ablation_attacker_preference_llama2_13b_only_distill \
+/path/to/models/llama2-13b-hf
 
 
 
@@ -64,16 +64,16 @@ diff_ablation_hh_llama2_13b_only_distill \
 
 run_diff \
 output/target_rm_llama32_3b_full_margin5_e1 \
-output/ablation_hh_llama32_3b_roberta_only_pretrain \
-diff_ablation_hh_llama32_3b_only_pretrain \
-/mnt/model_data/models/llama32-3b
+output/ablation_attacker_preference_llama32_3b_roberta_only_pretrain \
+diff_ablation_attacker_preference_llama32_3b_only_pretrain \
+/path/to/models/llama32-3b
 
 
 run_diff \
 output/target_rm_llama32_3b_full_margin5_e1 \
-output/ablation_hh_llama32_3b_roberta_only_distill \
-diff_ablation_hh_llama32_3b_only_distill \
-/mnt/model_data/models/llama32-3b
+output/ablation_attacker_preference_llama32_3b_roberta_only_distill \
+diff_ablation_attacker_preference_llama32_3b_only_distill \
+/path/to/models/llama32-3b
 
 
 
@@ -83,16 +83,16 @@ diff_ablation_hh_llama32_3b_only_distill \
 
 run_diff \
 output/target_rm_mistral_7b_full_margin5_e1 \
-output/ablation_hh_mistral_7b_roberta_only_pretrain \
-diff_ablation_hh_mistral_7b_only_pretrain \
-/mnt/model_data/models/mistral-7b-v0.1
+output/ablation_attacker_preference_mistral_7b_roberta_only_pretrain \
+diff_ablation_attacker_preference_mistral_7b_only_pretrain \
+/path/to/models/mistral-7b-v0.1
 
 
 run_diff \
 output/target_rm_mistral_7b_full_margin5_e1 \
-output/ablation_hh_mistral_7b_roberta_only_distill \
-diff_ablation_hh_mistral_7b_only_distill \
-/mnt/model_data/models/mistral-7b-v0.1
+output/ablation_attacker_preference_mistral_7b_roberta_only_distill \
+diff_ablation_attacker_preference_mistral_7b_only_distill \
+/path/to/models/mistral-7b-v0.1
 
 
 
@@ -102,16 +102,16 @@ diff_ablation_hh_mistral_7b_only_distill \
 
 run_diff \
 output/target_rm_qwen3_8b_full_margin5_e1 \
-output/ablation_hh_qwen3_8b_roberta_only_pretrain \
-diff_ablation_hh_qwen3_8b_only_pretrain \
-/mnt/model_data/models/qwen3-8b
+output/ablation_attacker_preference_qwen3_8b_roberta_only_pretrain \
+diff_ablation_attacker_preference_qwen3_8b_only_pretrain \
+/path/to/models/qwen3-8b
 
 
 run_diff \
 output/target_rm_qwen3_8b_full_margin5_e1 \
-output/ablation_hh_qwen3_8b_roberta_only_distill \
-diff_ablation_hh_qwen3_8b_only_distill \
-/mnt/model_data/models/qwen3-8b
+output/ablation_attacker_preference_qwen3_8b_roberta_only_distill \
+diff_ablation_attacker_preference_qwen3_8b_only_distill \
+/path/to/models/qwen3-8b
 
 
 echo "=============================================="

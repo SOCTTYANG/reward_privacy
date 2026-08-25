@@ -2,7 +2,7 @@
 
 set -e
 
-PROJECT=/mnt/model_data/projects/bai-rm-extraction-exp
+PROJECT=/path/to/code
 
 cd $PROJECT
 
@@ -30,16 +30,16 @@ echo "======== Train DeBERTa-v3-large ========"
 
 
 CUDA_VISIBLE_DEVICES=0 python -m src.train_extracted_rm_two_stage \
- --student_model_path /mnt/model_data/models/deberta-v3-large \
- --hh_pref_train_path data/hh_pref_train.jsonl \
- --hh_pref_eval_path data/hh_pref_test.jsonl \
+ --student_model_path /path/to/models/deberta-v3-large \
+ --attacker_preference_dataset_train_path data/attacker_preference_dataset_train.jsonl \
+ --attacker_preference_dataset_eval_path data/attacker_preference_dataset_test.jsonl \
  --scored_aux_path $AUX_DATA \
- --pku_pref_eval_path data/test.jsonl \
+ --defender_eval_eval_path data/test.jsonl \
  --output_dir output/ours_${TARGET_NAME}_deberta_v3_large \
- --max_hh_train_samples 5000 \
- --max_hh_eval_samples 1000 \
+ --max_attacker_preference_train_samples 5000 \
+ --max_attacker_preference_eval_samples 1000 \
  --max_aux_samples 5000 \
- --max_pku_eval_samples 1000 \
+ --max_defender_evaluation_eval_samples 1000 \
  --aux_train_ratio 0.9 \
  --pref_epochs 1 \
  --distill_epochs 1 \
@@ -79,16 +79,16 @@ echo "======== Train DeBERTa-v2-xlarge ========"
 
 
 CUDA_VISIBLE_DEVICES=0 python -m src.train_extracted_rm_two_stage \
- --student_model_path /mnt/model_data/models/deberta-v2-xlarge \
- --hh_pref_train_path data/hh_pref_train.jsonl \
- --hh_pref_eval_path data/hh_pref_test.jsonl \
+ --student_model_path /path/to/models/deberta-v2-xlarge \
+ --attacker_preference_dataset_train_path data/attacker_preference_dataset_train.jsonl \
+ --attacker_preference_dataset_eval_path data/attacker_preference_dataset_test.jsonl \
  --scored_aux_path $AUX_DATA \
- --pku_pref_eval_path data/test.jsonl \
+ --defender_eval_eval_path data/test.jsonl \
  --output_dir output/ours_${TARGET_NAME}_deberta_v2_xlarge \
- --max_hh_train_samples 5000 \
- --max_hh_eval_samples 1000 \
+ --max_attacker_preference_train_samples 5000 \
+ --max_attacker_preference_eval_samples 1000 \
  --max_aux_samples 5000 \
- --max_pku_eval_samples 1000 \
+ --max_defender_evaluation_eval_samples 1000 \
  --aux_train_ratio 0.9 \
  --pref_epochs 1 \
  --distill_epochs 1 \
@@ -133,7 +133,7 @@ echo "Finished $TARGET_NAME"
 
 run_one_target \
 qwen3_8b \
-/mnt/model_data/models/qwen3-8b \
+/path/to/models/qwen3-8b \
 output/target_rm_qwen3_8b_full_margin5_e1 \
 data/scored_aux_qwen3_8b_full_margin5_e1.jsonl
 
@@ -143,7 +143,7 @@ data/scored_aux_qwen3_8b_full_margin5_e1.jsonl
 
 run_one_target \
 llama32_3b \
-/mnt/model_data/models/llama32-3b \
+/path/to/models/llama32-3b \
 output/target_rm_llama32_3b_full_margin5_e1 \
 data/scored_aux_llama32_3b_full_margin5_e1.jsonl
 
@@ -153,7 +153,7 @@ data/scored_aux_llama32_3b_full_margin5_e1.jsonl
 
 run_one_target \
 llama2_13b \
-/mnt/model_data/models/llama2-13b-hf \
+/path/to/models/llama2-13b-hf \
 output/target_rm_llama2_13b_full_margin5_e1 \
 data/scored_aux_llama2_13b_full_margin5_e1.jsonl
 

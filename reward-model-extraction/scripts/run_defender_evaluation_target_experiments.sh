@@ -7,19 +7,19 @@ conda activate rm_extract
 export CUDA_VISIBLE_DEVICES=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-export HF_HOME=/mnt/bai_data/cache/huggingface
-export HF_DATASETS_CACHE=/mnt/bai_data/cache/huggingface/datasets
-export TRANSFORMERS_CACHE=/mnt/bai_data/cache/huggingface/transformers
-export TORCH_HOME=/mnt/bai_data/cache/torch
+export HF_HOME=/path/to/code-data/cache/huggingface
+export HF_DATASETS_CACHE=/path/to/code-data/cache/huggingface/datasets
+export TRANSFORMERS_CACHE=/path/to/code-data/cache/huggingface/transformers
+export TORCH_HOME=/path/to/code-data/cache/torch
 
 
-PROJECT_DIR=/mnt/bai_data/projects/bai-rm-extraction-exp
+PROJECT_DIR=/path/to/code
 
 cd ${PROJECT_DIR}
 
 
 echo "======================================================"
-echo "PKU-10K Ablation"
+echo "Defender Evaluation-10K Ablation"
 echo "Teacher: Llama2-7B"
 echo "Student: RoBERTa-base"
 echo "======================================================"
@@ -27,15 +27,15 @@ echo "======================================================"
 
 python -m src.train_extracted_rm_two_stage \
   --student_model_path ${PROJECT_DIR}/models/roberta-base \
-  --hh_pref_train_path ${PROJECT_DIR}/data/pku10k_pref_train.jsonl \
-  --hh_pref_eval_path ${PROJECT_DIR}/data/pku10k_pref_eval.jsonl \
+  --attacker_preference_dataset_train_path ${PROJECT_DIR}/data/defender_evaluation_pref_train.jsonl \
+  --attacker_preference_dataset_eval_path ${PROJECT_DIR}/data/defender_evaluation_pref_eval.jsonl \
   --scored_aux_path ${PROJECT_DIR}/data/scored_aux_llama2_7b.jsonl \
-  --pku_pref_eval_path ${PROJECT_DIR}/data/test.jsonl \
-  --output_dir ${PROJECT_DIR}/output/pku10k_exp3_llama2_7b_to_roberta \
-  --max_hh_train_samples 9500 \
-  --max_hh_eval_samples 500 \
+  --defender_eval_eval_path ${PROJECT_DIR}/data/test.jsonl \
+  --output_dir ${PROJECT_DIR}/output/defender_evaluation_exp3_llama2_7b_to_roberta \
+  --max_attacker_preference_train_samples 9500 \
+  --max_attacker_preference_eval_samples 500 \
   --max_aux_samples 5000 \
-  --max_pku_eval_samples 1000 \
+  --max_defender_evaluation_eval_samples 1000 \
   --aux_train_ratio 0.9 \
   --pref_epochs 1 \
   --distill_epochs 1 \
@@ -53,7 +53,7 @@ python -m src.train_extracted_rm_two_stage \
 
 
 echo "======================================================"
-echo "PKU-10K Ablation"
+echo "Defender Evaluation-10K Ablation"
 echo "Teacher: Llama2-7B"
 echo "Student: DistilRoBERTa"
 echo "======================================================"
@@ -61,15 +61,15 @@ echo "======================================================"
 
 python -m src.train_extracted_rm_two_stage \
   --student_model_path ${PROJECT_DIR}/models/distilroberta-base \
-  --hh_pref_train_path ${PROJECT_DIR}/data/pku10k_pref_train.jsonl \
-  --hh_pref_eval_path ${PROJECT_DIR}/data/pku10k_pref_eval.jsonl \
+  --attacker_preference_dataset_train_path ${PROJECT_DIR}/data/defender_evaluation_pref_train.jsonl \
+  --attacker_preference_dataset_eval_path ${PROJECT_DIR}/data/defender_evaluation_pref_eval.jsonl \
   --scored_aux_path ${PROJECT_DIR}/data/scored_aux_llama2_7b.jsonl \
-  --pku_pref_eval_path ${PROJECT_DIR}/data/test.jsonl \
-  --output_dir ${PROJECT_DIR}/output/pku10k_exp4_llama2_7b_to_distilroberta \
-  --max_hh_train_samples 9500 \
-  --max_hh_eval_samples 500 \
+  --defender_eval_eval_path ${PROJECT_DIR}/data/test.jsonl \
+  --output_dir ${PROJECT_DIR}/output/defender_evaluation_exp4_llama2_7b_to_distilroberta \
+  --max_attacker_preference_train_samples 9500 \
+  --max_attacker_preference_eval_samples 500 \
   --max_aux_samples 5000 \
-  --max_pku_eval_samples 1000 \
+  --max_defender_evaluation_eval_samples 1000 \
   --aux_train_ratio 0.9 \
   --pref_epochs 1 \
   --distill_epochs 1 \
@@ -87,5 +87,5 @@ python -m src.train_extracted_rm_two_stage \
 
 
 echo "======================================================"
-echo "PKU-10K Exp3 and Exp4 finished."
+echo "Defender Evaluation-10K Exp3 and Exp4 finished."
 echo "======================================================"

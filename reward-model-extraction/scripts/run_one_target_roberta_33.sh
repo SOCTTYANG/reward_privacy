@@ -7,15 +7,15 @@ conda activate rm_extract
 export CUDA_VISIBLE_DEVICES=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-export HF_HOME=/mnt/model_data/cache/huggingface
-export HF_DATASETS_CACHE=/mnt/model_data/cache/huggingface/datasets
-export TRANSFORMERS_CACHE=/mnt/model_data/cache/huggingface/transformers
-export TORCH_HOME=/mnt/model_data/cache/torch
-export TMPDIR=/mnt/model_data/tmp
+export HF_HOME=/path/to/cache/huggingface
+export HF_DATASETS_CACHE=/path/to/cache/huggingface/datasets
+export TRANSFORMERS_CACHE=/path/to/cache/huggingface/transformers
+export TORCH_HOME=/path/to/cache/torch
+export TMPDIR=/path/to/tmp
 
 mkdir -p ${HF_HOME} ${HF_DATASETS_CACHE} ${TRANSFORMERS_CACHE} ${TORCH_HOME} ${TMPDIR}
 
-PROJECT_DIR=/mnt/bai_data/projects/bai-rm-extraction-exp
+PROJECT_DIR=/path/to/code
 
 MODEL_PATH=$1
 RUN_NAME=$2
@@ -64,7 +64,7 @@ python -m src.train_target_rm_llama_lora \
   --seed 42
 
 echo "======================================================"
-echo "Step 2: Score Dolly auxiliary data with target RM"
+echo "Step 2: Score attacker-auxiliary-dataset auxiliary data with target RM"
 echo "======================================================"
 
 test -f ${TARGET_DIR}/adapter_config.json || { echo "[ERROR] adapter_config.json not found in ${TARGET_DIR}"; exit 1; }
@@ -73,7 +73,7 @@ test -f ${TARGET_DIR}/adapter_model.safetensors || { echo "[ERROR] adapter_model
 python -m src.score_aux_with_llama_lora \
   --base_model_path ${MODEL_PATH} \
   --lora_adapter_path ${TARGET_DIR} \
-  --aux_path ${PROJECT_DIR}/data/aux_dolly.jsonl \
+  --aux_path ${PROJECT_DIR}/data/attacker_auxiliary_dataset.jsonl \
   --output_path ${SCORED_AUX} \
   --max_samples 5000 \
   --batch_size 1 \
@@ -81,14 +81,14 @@ python -m src.score_aux_with_llama_lora \
   --bf16
 
 echo "======================================================"
-echo "Step 3: Eval target RM on PKU and HH"
+echo "Step 3: Eval target RM on Defender Evaluation and Attacker Preference"
 echo "======================================================"
 
 python -m src.eval_rm_misclassified \
   --base_model_path ${MODEL_PATH} \
   --adapter_path ${TARGET_DIR} \
   --eval_path ${PROJECT_DIR}/data/test.jsonl \
-  --output_dir ${PROJECT_DIR}/output/error_analysis/${RUN_NAME}_on_pku \
+  --output_dir ${PROJECT_DIR}/output/error_analysis/${RUN_NAME}_on_defender_evaluation \
   --max_samples 1000 \
   --batch_size 1 \
   --max_length 512 \
@@ -97,7 +97,7 @@ python -m src.eval_rm_misclassified \
 python -m src.eval_rm_misclassified \
   --base_model_path ${MODEL_PATH} \
   --adapter_path ${TARGET_DIR} \
-  --eval_path ${PROJECT_DIR}/data/hh_pref_test.jsonl \
+  --eval_path ${PROJECT_DIR}/data/attacker_preference_dataset_test.jsonl \
   --output_dir ${PROJECT_DIR}/output/error_analysis/${RUN_NAME}_on_hh \
   --max_samples 1000 \
   --batch_size 1 \
@@ -110,15 +110,15 @@ echo "======================================================"
 
 python -m src.train_extracted_rm_two_stage \
   --student_model_path ${PROJECT_DIR}/models/roberta-base \
-  --hh_pref_train_path ${PROJECT_DIR}/data/hh_pref_train.jsonl \
-  --hh_pref_eval_path ${PROJECT_DIR}/data/hh_pref_test.jsonl \
+  --attacker_preference_dataset_train_path ${PROJECT_DIR}/data/attacker_preference_dataset_train.jsonl \
+  --attacker_preference_dataset_eval_path ${PROJECT_DIR}/data/attacker_preference_dataset_test.jsonl \
   --scored_aux_path ${SCORED_AUX} \
-  --pku_pref_eval_path ${PROJECT_DIR}/data/test.jsonl \
+  --defender_eval_eval_path ${PROJECT_DIR}/data/test.jsonl \
   --output_dir ${PROJECT_DIR}/output/extracted_rm_${EXP_ROBERTA} \
-  --max_hh_train_samples 5000 \
-  --max_hh_eval_samples 1000 \
+  --max_attacker_preference_train_samples 5000 \
+  --max_attacker_preference_eval_samples 1000 \
   --max_aux_samples 5000 \
-  --max_pku_eval_samples 1000 \
+  --max_defender_evaluation_eval_samples 1000 \
   --aux_train_ratio 0.9 \
   --pref_epochs 1 \
   --distill_epochs 1 \

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Run the 50%/25% Dolly query-budget ablation for four additional teachers.
-# Every teacher uses an independently re-scored Dolly subset, RoBERTa-base,
+# Run the 50%/25% attacker-auxiliary-dataset query-budget ablation for four additional teachers.
+# Every teacher uses an independently re-scored attacker-auxiliary-dataset subset, RoBERTa-base,
 # the fixed 90/10 distillation split, and the standard teacher/student diff
-# evaluation (500 train + 500 PKU records; seed 42).
+# evaluation (500 train + 500 Defender Evaluation records; seed 42).
 
 set -eo pipefail
 
-PROJECT_DIR="${PROJECT_DIR:-/mnt/model_data/projects/bai-rm-extraction-exp}"
-BAI_PROJECT="${BAI_PROJECT:-/mnt/bai_data/projects/bai-rm-extraction-exp}"
+PROJECT_DIR="${PROJECT_DIR:-/path/to/code}"
+CODE_PROJECT="${CODE_PROJECT:-/path/to/code}"
 CONDA_ENV="${CONDA_ENV:-rm_extract}"
-ROBERTA_MODEL="${ROBERTA_MODEL:-${BAI_PROJECT}/models/roberta-base}"
-MODEL_ROOT="${MODEL_ROOT:-/mnt/model_data/models}"
+ROBERTA_MODEL="${ROBERTA_MODEL:-${CODE_PROJECT}/models/roberta-base}"
+MODEL_ROOT="${MODEL_ROOT:-/path/to/models}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${PROJECT_DIR}/output}"
 LOG_DIR="${LOG_DIR:-${PROJECT_DIR}/logs/query_budget_all_teachers}"
 GPU="${GPU:-0}"
@@ -21,13 +21,13 @@ set -u
 cd "${PROJECT_DIR}"
 mkdir -p "${LOG_DIR}" "${OUTPUT_ROOT}"
 
-for data_file in aux_dolly.jsonl hh_pref_train.jsonl hh_pref_test.jsonl test.jsonl; do
+for data_file in attacker_auxiliary_dataset.jsonl attacker_preference_dataset_train.jsonl attacker_preference_dataset_test.jsonl test.jsonl; do
   test -f "${PROJECT_DIR}/data/${data_file}" || {
     echo "[ERROR] Missing ${PROJECT_DIR}/data/${data_file}" >&2
     exit 1
   }
 done
-test -f "${BAI_PROJECT}/data/train.jsonl"
+test -f "${CODE_PROJECT}/data/train.jsonl"
 
 run_student() {
   local teacher_name="$1"
@@ -38,15 +38,15 @@ run_student() {
 
   CUDA_VISIBLE_DEVICES="${GPU}" python -m src.train_extracted_rm_two_stage \
     --student_model_path "${ROBERTA_MODEL}" \
-    --hh_pref_train_path data/hh_pref_train.jsonl \
-    --hh_pref_eval_path data/hh_pref_test.jsonl \
+    --attacker_preference_dataset_train_path data/attacker_preference_dataset_train.jsonl \
+    --attacker_preference_dataset_eval_path data/attacker_preference_dataset_test.jsonl \
     --scored_aux_path "${scored_aux}" \
-    --pku_pref_eval_path data/test.jsonl \
+    --defender_eval_eval_path data/test.jsonl \
     --output_dir "${output_dir}" \
-    --max_hh_train_samples 5000 \
-    --max_hh_eval_samples 1000 \
+    --max_attacker_preference_train_samples 5000 \
+    --max_attacker_preference_eval_samples 1000 \
     --max_aux_samples "${query_count}" \
-    --max_pku_eval_samples 1000 \
+    --max_defender_evaluation_eval_samples 1000 \
     --aux_train_ratio 0.9 \
     --pref_epochs 1 \
     --distill_epochs 1 \
@@ -70,8 +70,8 @@ run_diff() {
     --target_base_model "${teacher_base}" \
     --target_adapter_path "${teacher_adapter}" \
     --substitute_model_path "${OUTPUT_ROOT}/ours_${teacher_name}_roberta_base_${budget_name}" \
-    --train_path "${BAI_PROJECT}/data/train.jsonl" \
-    --test_path "${BAI_PROJECT}/data/test.jsonl" \
+    --train_path "${CODE_PROJECT}/data/train.jsonl" \
+    --test_path "${CODE_PROJECT}/data/test.jsonl" \
     --sample_train 500 \
     --sample_test 500 \
     --output_dir "${OUTPUT_ROOT}/diff_ours_${teacher_name}_roberta_base_${budget_name}" \
@@ -91,11 +91,11 @@ run_budget() {
   local query_count="$5"
   local scored_aux="${PROJECT_DIR}/data/scored_aux_${teacher_name}_${budget_name}.jsonl"
 
-  echo "[INFO] ${teacher_name}/${budget_name}: querying ${query_count} Dolly records"
+  echo "[INFO] ${teacher_name}/${budget_name}: querying ${query_count} attacker-auxiliary-dataset records"
   CUDA_VISIBLE_DEVICES="${GPU}" python -m src.score_aux_with_llama_lora \
     --base_model_path "${teacher_base}" \
     --lora_adapter_path "${teacher_adapter}" \
-    --aux_path data/aux_dolly.jsonl \
+    --aux_path data/attacker_auxiliary_dataset.jsonl \
     --output_path "${scored_aux}" \
     --target_model_name "${teacher_name}" \
     --max_samples "${query_count}" \
@@ -123,15 +123,15 @@ run_teacher() {
 
 run_teacher mistral_7b \
   "${MODEL_ROOT}/mistral-7b-v0.1" \
-  "${BAI_PROJECT}/output/target_rm_mistral_7b_full_margin5_e1"
+  "${CODE_PROJECT}/output/target_rm_mistral_7b_full_margin5_e1"
 run_teacher qwen3_8b \
   "${MODEL_ROOT}/qwen3-8b" \
-  "${BAI_PROJECT}/output/target_rm_qwen3_8b_full_margin5_e1"
+  "${CODE_PROJECT}/output/target_rm_qwen3_8b_full_margin5_e1"
 run_teacher llama32_3b \
   "${MODEL_ROOT}/llama32-3b" \
-  "${BAI_PROJECT}/output/target_rm_llama32_3b_full_margin5_e1"
+  "${CODE_PROJECT}/output/target_rm_llama32_3b_full_margin5_e1"
 run_teacher llama2_13b \
   "${MODEL_ROOT}/llama2-13b-hf" \
-  "${BAI_PROJECT}/output/target_rm_llama2_13b_full_margin5_e1"
+  "${CODE_PROJECT}/output/target_rm_llama2_13b_full_margin5_e1"
 
 echo "[OK] All four teacher query-budget ablations completed."

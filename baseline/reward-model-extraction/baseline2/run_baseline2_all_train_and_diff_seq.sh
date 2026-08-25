@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WORKDIR="/mnt/model_data/projects/bai-rm-extraction-exp"
-MODEL_DATA_ROOT="/mnt/model_data/projects/bai-rm-extraction-exp"
+WORKDIR="/path/to/code"
+MODEL_DATA_ROOT="/path/to/code"
 
 BASELINE2_SCRIPT="${MODEL_DATA_ROOT}/baseline/reward-model-extraction/baseline2/train_baseline2_miniplm_rm_difference_sampling.py"
 DIFF_SCRIPT="${WORKDIR}/reward-model-extraction/scripts/eval_target_vs_substitute_diff.py"
@@ -15,10 +15,10 @@ RESULT_ROOT="${MODEL_DATA_ROOT}/results/baseline2"
 mkdir -p "$OUT_ROOT" "$DATA_OUT_ROOT" "$LOG_ROOT" "$RESULT_ROOT"
 
 export PYTHONDONTWRITEBYTECODE=1
-export TMPDIR=/mnt/model_data/tmp
-export HF_HOME=/mnt/model_data/cache/huggingface
-export TRANSFORMERS_CACHE=/mnt/model_data/cache/huggingface/transformers
-export TORCH_HOME=/mnt/model_data/cache/torch
+export TMPDIR=/path/to/tmp
+export HF_HOME=/path/to/cache/huggingface
+export TRANSFORMERS_CACHE=/path/to/cache/huggingface/transformers
+export TORCH_HOME=/path/to/cache/torch
 
 mkdir -p "$TMPDIR" "$HF_HOME" "$TRANSFORMERS_CACHE" "$TORCH_HOME"
 
@@ -31,7 +31,7 @@ FORCE="${FORCE:-0}"
 
 init_result_file() {
   if [[ ! -f "$RESULT_TSV" ]]; then
-    echo -e "TargetRM\tTag\tDiff_avg\tDiff_var\tDiff_std\tN_items\tSimple_PKU_acc\tSelected_N\tSelected_diff_avg\tSelected_diff_var\tTrain_metric_path\tDiff_summary_path" > "$RESULT_TSV"
+    echo -e "TargetRM\tTag\tDiff_avg\tDiff_var\tDiff_std\tN_items\tSimple_Defender Evaluation_acc\tSelected_N\tSelected_diff_avg\tSelected_diff_var\tTrain_metric_path\tDiff_summary_path" > "$RESULT_TSV"
   fi
 }
 
@@ -72,7 +72,7 @@ row = [
 
 path = Path(result_tsv)
 lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-header = "TargetRM\tTag\tDiff_avg\tDiff_var\tDiff_std\tN_items\tSimple_PKU_acc\tSelected_N\tSelected_diff_avg\tSelected_diff_var\tTrain_metric_path\tDiff_summary_path"
+header = "TargetRM\tTag\tDiff_avg\tDiff_var\tDiff_std\tN_items\tSimple_Defender Evaluation_acc\tSelected_N\tSelected_diff_avg\tSelected_diff_var\tTrain_metric_path\tDiff_summary_path"
 
 # 去掉旧的同 tag 行，防止重复追加
 new_lines = []
@@ -186,23 +186,23 @@ init_result_file
 
 # 从小到大依次运行
 run_one "LLaMA3.2-3B" "exp8_llama32_3b" \
-  "/mnt/model_data/models/llama32-3b" \
+  "/path/to/models/llama32-3b" \
   "output/target_rm_llama32_3b_full_margin5_e1"
 
 run_one "LLaMA2-7B" "exp3_llama2_7b" \
-  "/home/vipuser/Desktop/model/llama2-7b" \
+  "/path/to/target-model/llama2-7b" \
   "output/target_rm_llama2_7b_lora_full_margin5_e2"
 
 run_one "Mistral-7B" "exp12_mistral_7b" \
-  "/mnt/model_data/models/mistral-7b-v0.1" \
+  "/path/to/models/mistral-7b-v0.1" \
   "output/target_rm_mistral_7b_full_margin5_e1"
 
 run_one "Qwen3-8B" "exp10_qwen3_8b" \
-  "/mnt/model_data/models/qwen3-8b" \
+  "/path/to/models/qwen3-8b" \
   "output/target_rm_qwen3_8b_full_margin5_e1"
 
 run_one "LLaMA2-13B" "exp6_llama2_13b" \
-  "/mnt/model_data/models/llama2-13b-hf" \
+  "/path/to/models/llama2-13b-hf" \
   "output/target_rm_llama2_13b_full_margin5_e1"
 
 echo

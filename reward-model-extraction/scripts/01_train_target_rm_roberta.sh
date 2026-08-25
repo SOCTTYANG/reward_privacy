@@ -7,7 +7,7 @@ conda activate rm_extract
 export CUDA_VISIBLE_DEVICES=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-PROJECT_DIR=/run/media/vipuser/data/projects/bai-rm-extraction-exp
+PROJECT_DIR=/path/to/code
 
 cd ${PROJECT_DIR}
 

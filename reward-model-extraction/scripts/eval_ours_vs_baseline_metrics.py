@@ -335,9 +335,9 @@ def evaluate_method(
         device=device,
     )
 
-    pku_result = eval_pairwise(
-        split_name="PKU",
-        data_path=args.pku_path,
+    defender_evaluation_result = eval_pairwise(
+        split_name="Defender Evaluation",
+        data_path=args.defender_evaluation_path,
         target_model=target_model,
         target_tok=target_tok,
         sub_model=sub_model,
@@ -350,9 +350,9 @@ def evaluate_method(
         seed=args.seed,
     )
 
-    hh_result = eval_pairwise(
-        split_name="HH",
-        data_path=args.hh_path,
+    attacker_preference_result = eval_pairwise(
+        split_name="Attacker Preference",
+        data_path=args.attacker_preference_path,
         target_model=target_model,
         target_tok=target_tok,
         sub_model=sub_model,
@@ -382,8 +382,8 @@ def evaluate_method(
     result = {
         "method": method_name,
         "substitute_path": sub_path,
-        "PKU": pku_result,
-        "HH": hh_result,
+        "Defender Evaluation": defender_evaluation_result,
+        "Attacker Preference": attacker_preference_result,
         "AUX": aux_result,
     }
 
@@ -395,24 +395,24 @@ def evaluate_method(
 
 def print_table(results):
     print("\n")
-    print("| Method | PKU Acc | PKU Agree | HH Acc | HH Agree | Dolly Pearson | PKU Diff_avg | PKU Diff_var |")
+    print("| Method | Defender Evaluation Acc | Defender Evaluation Agree | Attacker Preference Acc | Attacker Preference Agree | attacker-auxiliary-dataset Pearson | Defender Evaluation Diff_avg | Defender Evaluation Diff_var |")
     print("|---|---:|---:|---:|---:|---:|---:|---:|")
 
     for r in results:
         method = r["method"]
-        pku = r["PKU"]
-        hh = r["HH"]
+        defender_evaluation = r["Defender Evaluation"]
+        hh = r["Attacker Preference"]
         aux = r["AUX"]
 
         print(
             f"| {method} | "
-            f"{pku['substitute_gold_acc']:.6f} | "
-            f"{pku['target_student_agreement_acc']:.6f} | "
+            f"{defender_evaluation['substitute_gold_acc']:.6f} | "
+            f"{defender_evaluation['target_student_agreement_acc']:.6f} | "
             f"{hh['substitute_gold_acc']:.6f} | "
             f"{hh['target_student_agreement_acc']:.6f} | "
             f"{aux['pearson']:.6f} | "
-            f"{pku['Diff_avg']:.6f} | "
-            f"{pku['Diff_var']:.6f} |"
+            f"{defender_evaluation['Diff_avg']:.6f} | "
+            f"{defender_evaluation['Diff_var']:.6f} |"
         )
 
 
@@ -427,9 +427,9 @@ def main():
     parser.add_argument("--baseline_substitute_path", required=True)
     parser.add_argument("--student_tokenizer_path", default="models/roberta-base")
 
-    parser.add_argument("--pku_path", default="data/test.jsonl")
-    parser.add_argument("--hh_path", default="data/hh_pref_test.jsonl")
-    parser.add_argument("--aux_path", default="data/aux_dolly.jsonl")
+    parser.add_argument("--defender_evaluation_path", default="data/test.jsonl")
+    parser.add_argument("--attacker_preference_path", default="data/attacker_preference_dataset_test.jsonl")
+    parser.add_argument("--aux_path", default="data/attacker_auxiliary_dataset.jsonl")
 
     parser.add_argument("--max_pairwise_samples", type=int, default=1000)
     parser.add_argument("--max_aux_samples", type=int, default=5000)

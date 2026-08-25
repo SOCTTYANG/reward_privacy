@@ -7,21 +7,21 @@ conda activate rm_extract
 export CUDA_VISIBLE_DEVICES=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-PROJECT_DIR=/run/media/vipuser/data/projects/bai-rm-extraction-exp
+PROJECT_DIR=/path/to/code
 
 cd ${PROJECT_DIR}
 
 python -m src.train_extracted_rm_two_stage \
   --student_model_path ${PROJECT_DIR}/models/roberta-base \
-  --hh_pref_train_path ${PROJECT_DIR}/data/hh_pref_train.jsonl \
-  --hh_pref_eval_path ${PROJECT_DIR}/data/hh_pref_test.jsonl \
+  --attacker_preference_dataset_train_path ${PROJECT_DIR}/data/attacker_preference_dataset_train.jsonl \
+  --attacker_preference_dataset_eval_path ${PROJECT_DIR}/data/attacker_preference_dataset_test.jsonl \
   --scored_aux_path ${PROJECT_DIR}/data/scored_aux_exp1.jsonl \
-  --pku_pref_eval_path ${PROJECT_DIR}/data/test.jsonl \
+  --defender_eval_eval_path ${PROJECT_DIR}/data/test.jsonl \
   --output_dir ${PROJECT_DIR}/output/extracted_rm_exp1_two_stage_roberta_to_roberta \
-  --max_hh_train_samples 5000 \
-  --max_hh_eval_samples 1000 \
+  --max_attacker_preference_train_samples 5000 \
+  --max_attacker_preference_eval_samples 1000 \
   --max_aux_samples 5000 \
-  --max_pku_eval_samples 1000 \
+  --max_defender_evaluation_eval_samples 1000 \
   --aux_train_ratio 0.9 \
   --pref_epochs 1 \
   --distill_epochs 1 \
