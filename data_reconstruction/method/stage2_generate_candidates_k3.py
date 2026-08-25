@@ -9,25 +9,7 @@ import torch
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-
-INSTRUCTION_PREFIX = (
-    "You are given a user prompt and a preferred response. "
-    "Generate an alternative response that is less preferred than the preferred response. "
-    "The response should still be a plausible answer to the prompt, "
-    "but it should be less helpful, less direct, less complete, or less useful.\n\n"
-)
-PROMPT_PREFIX = "User prompt:\n"
-PREFERRED_PREFIX = "\n\nPreferred response:\n"
-TARGET_PREFIX = "\n\nLess-preferred alternative response:\n"
-
-
-def build_source_text(x: str, y_plus: str) -> str:
-    return (
-        INSTRUCTION_PREFIX
-        + PROMPT_PREFIX + x
-        + PREFERRED_PREFIX + y_plus
-        + TARGET_PREFIX
-    )
+from step1_finetune_seq2seq import build_source_text_with_budget
 
 
 def load_jsonl(path: str) -> List[Dict]:
@@ -50,16 +32,6 @@ def save_jsonl(rows: List[Dict], path: str) -> None:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def normalize_text(text: str) -> str:
-    return " ".join(text.strip().split())
-
-
-def extract_candidate(decoded_text: str) -> str:
-    if TARGET_PREFIX in decoded_text:
-        return decoded_text.split(TARGET_PREFIX, 1)[1].strip()
-    return decoded_text.strip()
-
-
 def resolve_torch_dtype(torch_dtype: str, device: str):
     if torch_dtype == "auto":
         return torch.float16 if device.startswith("cuda") else torch.float32
@@ -72,7 +44,9 @@ def resolve_torch_dtype(torch_dtype: str, device: str):
     raise ValueError(f"Unsupported torch dtype: {torch_dtype}")
 
 
-def load_generator(base_model_path: str, adapter_dir: str, device: str, torch_dtype: str):
+def load_generator(
+    base_model_path: str, adapter_dir: str, device: str, torch_dtype: str
+):
     tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -100,67 +74,64 @@ def generate_candidate_yminus(
     y_plus: str,
     device: str,
     num_candidates: int = 3,
+    max_source_tokens: int = 192,
     max_new_tokens: int = 96,
-    temperature: float = 1.0,
-    top_p: float = 0.95,
-    repetition_penalty: float = 1.05,
 ) -> List[str]:
-    source_text = build_source_text(x, y_plus)
-    inputs = tokenizer(source_text, return_tensors="pt").to(device)
+    if num_candidates <= 0:
+        raise ValueError("num_candidates must be positive.")
 
-    outputs = model.generate(
-        **inputs,
-        max_new_tokens=max_new_tokens,
-        do_sample=True,
-        temperature=temperature,
-        top_p=top_p,
-        repetition_penalty=repetition_penalty,
-        num_return_sequences=max(num_candidates * 2, num_candidates),
-        pad_token_id=tokenizer.eos_token_id,
+    source_text = build_source_text_with_budget(
+        x=x,
+        y_plus=y_plus,
+        tokenizer=tokenizer,
+        max_source_tokens=max_source_tokens,
     )
+    inputs = tokenizer(source_text, return_tensors="pt").to(device)
+    prompt_width = inputs["input_ids"].shape[1]
 
-    candidates = []
-    seen = set()
-
-    for out in outputs:
-        text = tokenizer.decode(out, skip_special_tokens=True)
-        cand = extract_candidate(text)
-        cand_norm = normalize_text(cand)
-
-        if not cand_norm or cand_norm in seen:
-            continue
-
-        seen.add(cand_norm)
-        candidates.append(cand)
-
-        if len(candidates) >= num_candidates:
-            break
-
-    retry = 0
-    while len(candidates) < num_candidates and retry < 10:
-        retry += 1
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
-            temperature=temperature + 0.1 * retry,
-            top_p=min(0.99, top_p + 0.01 * retry),
-            repetition_penalty=repetition_penalty,
-            num_return_sequences=1,
-            pad_token_id=tokenizer.eos_token_id,
+    sequences = inputs["input_ids"].expand(num_candidates, -1).clone()
+    attention_mask = inputs["attention_mask"].expand(num_candidates, -1).clone()
+    finished = torch.zeros(num_candidates, dtype=torch.bool, device=device)
+    pad_id = tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = tokenizer.eos_token_id
+    if pad_id is None:
+        raise ValueError(
+            "The generation tokenizer must define pad_token_id or eos_token_id."
         )
 
-        text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        cand = extract_candidate(text)
-        cand_norm = normalize_text(cand)
+    for _ in range(max_new_tokens):
+        outputs = model(
+            input_ids=sequences,
+            attention_mask=attention_mask,
+            return_dict=True,
+        )
+        next_token_probabilities = torch.softmax(
+            outputs.logits[:, -1, :].float(), dim=-1
+        )
+        next_tokens = torch.multinomial(
+            next_token_probabilities, num_samples=1
+        ).squeeze(-1)
+        active = ~finished
+        next_tokens = torch.where(
+            active,
+            next_tokens,
+            torch.full_like(next_tokens, pad_id),
+        )
+        sequences = torch.cat([sequences, next_tokens.unsqueeze(-1)], dim=1)
+        attention_mask = torch.cat(
+            [attention_mask, active.long().unsqueeze(-1)],
+            dim=1,
+        )
+        if tokenizer.eos_token_id is not None:
+            finished = finished | (active & next_tokens.eq(tokenizer.eos_token_id))
+            if bool(finished.all()):
+                break
 
-        if not cand_norm or cand_norm in seen:
-            continue
+    generated_ids = sequences[:, prompt_width:]
+    candidates = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
 
-        seen.add(cand_norm)
-        candidates.append(cand)
-
-    return candidates[:num_candidates]
+    return [candidate.strip() for candidate in candidates]
 
 
 def main():
@@ -172,10 +143,8 @@ def main():
     parser.add_argument("--max_samples", type=int, default=-1)
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--num_candidates", type=int, default=3)
+    parser.add_argument("--max_source_tokens", type=int, default=192)
     parser.add_argument("--max_new_tokens", type=int, default=96)
-    parser.add_argument("--temperature", type=float, default=1.0)
-    parser.add_argument("--top_p", type=float, default=0.95)
-    parser.add_argument("--repetition_penalty", type=float, default=1.05)
     parser.add_argument(
         "--torch_dtype",
         type=str,
@@ -197,13 +166,20 @@ def main():
 
     data = load_jsonl(args.input_file)
     if args.max_samples > 0:
-        data = data[:args.max_samples]
+        data = data[: args.max_samples]
 
     print(f"[INFO] Loaded {len(data)} samples from: {args.input_file}")
 
     output_rows = []
 
     for idx, item in enumerate(data):
+        forbidden_reference_fields = {"y_minus", "real_y_minus", "reference_y_minus"}
+        leaked_fields = forbidden_reference_fields.intersection(item)
+        if leaked_fields:
+            raise ValueError(
+                "Stage 2 input must contain only attack-visible target data; "
+                f"found hidden reference fields: {sorted(leaked_fields)}"
+            )
         x = str(item.get("x", "")).strip()
         y_plus = str(item.get("y_plus", "")).strip()
 
@@ -217,14 +193,14 @@ def main():
             y_plus=y_plus,
             device=args.device,
             num_candidates=args.num_candidates,
+            max_source_tokens=args.max_source_tokens,
             max_new_tokens=args.max_new_tokens,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            repetition_penalty=args.repetition_penalty,
         )
 
         out_row = {
+            "sample_id": item.get("sample_id", idx),
             "x": x,
+            "y_plus": y_plus,
             "candidate_y_minus_list": candidate_y_minus_list,
         }
 
