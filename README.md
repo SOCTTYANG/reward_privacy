@@ -1,155 +1,158 @@
 # Reward Model Privacy
 
-本仓库汇集了奖励模型（Reward Model, RM）的三类隐私与安全实验：**奖励模型窃取**、**成员推断**和**训练数据重构**，并提供对应的基线方法与基于差分隐私的防御实现。代码以实验脚本为主；数据集、预训练模型、检查点和实验输出不随仓库提供，运行前需要把脚本中的占位路径或命令行参数替换为本地路径。
+This repository collects privacy and security experiments for reward models (RMs) across three main areas: **reward model extraction**, **membership inference**, and **training-data reconstruction**. It also includes corresponding baselines and a differential privacy defense.
 
-## 目录总览
+The repository is organized primarily as experimental scripts. Datasets, pretrained models, checkpoints, logs, and generated outputs are not included. Before running an experiment, replace placeholder paths in the scripts or supply valid local paths through command-line arguments.
 
+## Repository Structure
+
+```text
 reward_privacy-main/
-├── reward-model-extraction/       # 奖励模型窃取主方法、评估与消融实验
-├── membership_inference/          # 四阶段成员推断攻击
-├── data_reconstruction/           # 训练数据重构主方法与评估
-├── defense/                       # 差分隐私防御实验
-├── baseline/                      # 三类任务的对比基线
-├── README.md                      # 本说明文件
-└── requirements.txt               # 仓库通用 Python 依赖
+├── reward-model-extraction/       # Main RM extraction methods, evaluation, and ablations
+├── membership_inference/          # Four-stage membership inference attack
+├── data_reconstruction/           # Main training-data reconstruction method and evaluation
+├── defense/                       # Differential privacy defense experiments
+├── baseline/                      # Baselines for the three privacy attacks
+├── README.md                      # Repository overview
+└── requirements.txt               # Shared Python dependencies
+```
 
+## Directories and Files
 
-## 子目录与文件说明
+### `reward-model-extraction/`
 
-### `reward-model-extraction/`：奖励模型窃取
+This directory implements the complete reward model extraction workflow: train a target RM, construct attacker data, query target scores, train a substitute RM, and compare the target and substitute models.
 
-该目录实现“训练目标 RM → 构造攻击者数据 → 查询目标得分 → 训练替代 RM → 比较目标与替代模型”的完整流程。
+- `README.md`: Module overview, data format, and path conventions.
+- `requirements.txt`: Minimal dependencies for this module; the root requirements file is a repository-wide superset.
+- `run_all_agreement_diff.sh`: Batch computation of ranking agreement and differences across experiments.
 
-- `README.md`：该模块的简要流程、数据格式和路径说明。
-- `requirements.txt`：该模块原有的最小依赖列表；根目录 requirements 是整个仓库的超集。
-- `run_all_agreement_diff.sh`：批量计算不同实验结果之间的排序一致性/差异。
+Python implementations in `src/`:
 
-`src/` 中的 Python 实现：
+- `__init__.py`: Marks `src` as a Python package.
+- `train_target_rm.py`: Trains a sequence-classification target RM such as RoBERTa.
+- `train_target_rm_llama_lora.py`: Fine-tunes a causal-language-model target RM with LoRA.
+- `train_extracted_rm_two_stage.py`: Trains an encoder-based substitute RM in two stages: preference learning followed by target-score regression.
+- `train_extracted_rm_llama_lora_two_stage.py`: Performs two-stage training for a LoRA causal-LM substitute RM.
+- `score_aux_with_target.py`: Scores attacker auxiliary samples with a target sequence-classification RM.
+- `score_aux_with_llama_lora.py`: Scores auxiliary samples with a LoRA causal-LM RM.
+- `score_aux_with_public_reward_model.py`: Scores auxiliary data with a public reward model.
+- `prepare_attacker_auxiliary_dataset.py`: Builds the auxiliary dataset used to query the target model.
+- `prepare_attacker_auxiliary_dataset_disjoint.py`: Builds an auxiliary dataset disjoint from other training data.
+- `prepare_attacker_preference_dataset.py`: Prepares preference data for the first stage of substitute-model training.
+- `prepare_preference_aux.py`: Converts auxiliary records into a preference-learning format.
+- `prepare_defender_evaluation_dataset.py`: Prepares data for defender-side evaluation.
+- `prepare_defender_evaluation_dataset_builder.py`: Provides reusable defender evaluation dataset-building logic.
+- `eval_public_reward_model_extraction.py`: Evaluates substitute models distilled or extracted from public RMs.
+- `eval_rm_misclassified.py`: Analyzes samples misclassified by target or substitute RMs.
+- `extraction_metrics.py`: Shared extraction metrics, including positive-pair ranking agreement.
 
-- `__init__.py`：将 `src` 标记为 Python 包。
-- `train_target_rm.py`：训练基于序列分类模型（如 RoBERTa）的目标奖励模型。
-- `train_target_rm_llama_lora.py`：用 LoRA 微调因果语言模型形式的目标奖励模型。
-- `train_extracted_rm_two_stage.py`：两阶段训练编码器式替代奖励模型，先学习偏好、再拟合目标分数。
-- `train_extracted_rm_llama_lora_two_stage.py`：两阶段训练 LoRA 因果语言模型替代 RM。
-- `score_aux_with_target.py`：用目标序列分类 RM 为攻击者辅助样本打分。
-- `score_aux_with_llama_lora.py`：用带 LoRA 适配器的因果语言模型 RM 打分。
-- `score_aux_with_public_reward_model.py`：调用公开奖励模型给辅助数据打分。
-- `prepare_attacker_auxiliary_dataset.py`：构造攻击者用于查询目标模型的辅助数据集。
-- `prepare_attacker_auxiliary_dataset_disjoint.py`：构造与其他训练数据互斥的辅助数据集。
-- `prepare_attacker_preference_dataset.py`：整理替代模型第一阶段所需的攻击者偏好数据。
-- `prepare_preference_aux.py`：把辅助记录整理为偏好学习可用的格式。
-- `prepare_defender_evaluation_dataset.py`：准备防御方评估数据。
-- `prepare_defender_evaluation_dataset_builder.py`：提供防御评估集构建逻辑与可复用处理函数。
-- `eval_public_reward_model_extraction.py`：评估从公开 RM 蒸馏/窃取得到的替代模型。
-- `eval_rm_misclassified.py`：分析目标或替代 RM 的误分类样本。
-- `extraction_metrics.py`：共享的窃取评估指标，例如正样本对排序一致率。
+Experiment launchers and utilities in `scripts/`:
 
-`scripts/` 中的入口与实验编排：
+- `01_train_target_rm_roberta.sh`: Trains a RoBERTa target RM.
+- `02_score_attacker_auxiliary_with_target.sh`: Queries the target RM on auxiliary data.
+- `03_train_extracted_rm_two_stage_exp1.sh`: Runs two-stage substitute-RM training for Experiment 1.
+- `04_train_extracted_rm_two_stage_exp2_distilroberta.sh`: Runs Experiment 2 with DistilRoBERTa.
+- `05_train_target_rm_llama2_7b_lora.sh`: Trains a Llama-2-7B LoRA target RM.
+- `06_score_attacker_auxiliary_with_adapter.sh`: Scores auxiliary data with a LoRA target adapter.
+- `07_run_exp3_exp4_llama_target.sh`: Runs Experiments 3 and 4 with a Llama target.
+- `08_run_ablation_llama2_7b_roberta.sh`: Runs the Llama/RoBERTa architecture ablation.
+- `08_train_exp5_llama2_7b_to_llama2_7b.sh`: Runs same-architecture Llama-2-7B-to-Llama-2-7B extraction.
+- `09_run_exp3_exp4_margin5_target.sh`: Runs Experiments 3 and 4 with the configured margin setting.
+- `10_train_target_rm_any_causal_lm_lora.sh`: Generic LoRA target-RM launcher for compatible causal language models.
+- `run_one_target_roberta_33.sh`: Runs one RoBERTa target experiment with the 33% data setting.
+- `run_exp8_exp10_exp12_exp6_roberta_all.sh`: Runs multiple RoBERTa experiments in a batch.
+- `run_ours_student_single_a100.sh`: Runs the proposed student-model method on one A100 GPU.
+- `run_ours_student_scaling_a100.sh`: Runs student-model scaling experiments on A100 GPUs.
+- `run_ours_student_scaling_remaining_single_a100.sh`: Resumes remaining single-A100 scaling experiments.
+- `run_ablation_attacker_preference_diff.sh`: Ablates differences in attacker preference data.
+- `run_ablation_attacker_preference_teacher_scaling.sh`: Studies teacher scaling with attacker preference data.
+- `run_defender_evaluation_all_teachers.sh`: Evaluates all teacher models.
+- `run_defender_evaluation_all_teachers_diff.sh`: Compares evaluation differences across teacher models.
+- `run_defender_evaluation_comparison_and_diff.sh`: Runs defender-side comparisons and difference analysis.
+- `run_defender_evaluation_target_experiments.sh`: Runs defender evaluation for target-model experiments.
+- `batch_compute_agreement.py`: Computes prediction or ranking agreement between target and substitute RMs in batches.
+- `convert_defender_evaluation_to_preference.py`: Converts defender evaluation records into preference pairs.
+- `eval_ours_vs_baseline_metrics.py`: Summarizes and compares metrics for the proposed method and baselines.
+- `eval_target_vs_substitute_diff.py`: Analyzes differences between target and substitute model outputs.
+- `evaluate_teacher_accuracies.py`: Computes the accuracy of multiple teacher RMs.
+- `download_target_models.sh`: Downloads target models required by the experiments.
 
-- `01_train_target_rm_roberta.sh`：训练 RoBERTa 目标 RM。
-- `02_score_attacker_auxiliary_with_target.sh`：用目标 RM 查询辅助数据。
-- `03_train_extracted_rm_two_stage_exp1.sh`：运行实验 1 的两阶段替代 RM 训练。
-- `04_train_extracted_rm_two_stage_exp2_distilroberta.sh`：以 DistilRoBERTa 运行实验 2。
-- `05_train_target_rm_llama2_7b_lora.sh`：训练 Llama-2-7B LoRA 目标 RM。
-- `06_score_attacker_auxiliary_with_adapter.sh`：用 LoRA 目标模型为辅助集打分。
-- `07_run_exp3_exp4_llama_target.sh`：运行以 Llama 为目标模型的实验 3/4。
-- `08_run_ablation_llama2_7b_roberta.sh`：运行 Llama 与 RoBERTa 组合的消融实验。
-- `08_train_exp5_llama2_7b_to_llama2_7b.sh`：运行 Llama-2-7B 到 Llama-2-7B 的同架构窃取。
-- `09_run_exp3_exp4_margin5_target.sh`：在指定 margin 设置下运行实验 3/4。
-- `10_train_target_rm_any_causal_lm_lora.sh`：面向任意兼容因果语言模型的 LoRA 目标 RM 入口。
-- `run_one_target_roberta_33.sh`：运行单个 33% 数据设置的 RoBERTa 目标实验。
-- `run_exp8_exp10_exp12_exp6_roberta_all.sh`：批量执行多组 RoBERTa 实验。
-- `run_ours_student_single_a100.sh`：面向单张 A100 的主方法学生模型实验。
-- `run_ours_student_scaling_a100.sh`：在 A100 上运行学生模型规模扩展实验。
-- `run_ours_student_scaling_remaining_single_a100.sh`：补跑尚未完成的单 A100 规模实验。
-- `run_ablation_attacker_preference_diff.sh`：攻击者偏好数据差异消融。
-- `run_ablation_attacker_preference_teacher_scaling.sh`：教师规模与攻击者偏好数据消融。
-- `run_defender_evaluation_all_teachers.sh`：批量评估全部教师模型。
-- `run_defender_evaluation_all_teachers_diff.sh`：批量比较教师模型评估结果差异。
-- `run_defender_evaluation_comparison_and_diff.sh`：运行防御评估对比及差异统计。
-- `run_defender_evaluation_target_experiments.sh`：运行目标模型侧的防御评估实验。
-- `batch_compute_agreement.py`：批量计算目标/替代 RM 的预测或排序一致性。
-- `convert_defender_evaluation_to_preference.py`：把防御评估记录转换为偏好对格式。
-- `eval_ours_vs_baseline_metrics.py`：汇总并比较主方法与基线指标。
-- `eval_target_vs_substitute_diff.py`：分析目标模型与替代模型输出差异。
-- `evaluate_teacher_accuracies.py`：统计多个教师 RM 的准确率。
-- `download_target_models.sh`：下载实验所需的目标模型。
+Query-budget ablations in `scripts/ablation/query_budget/`:
 
-`scripts/ablation/query_budget/`：
+- `run_roberta_query_budget_all_teachers.sh`: Runs query-budget ablations for all RoBERTa teachers.
+- `run_attacker_auxiliary_query_budget_ablation.sh`: Repeats extraction under different auxiliary-query budgets.
 
-- `run_roberta_query_budget_all_teachers.sh`：对所有 RoBERTa 教师运行查询预算消融。
-- `run_attacker_auxiliary_query_budget_ablation.sh`：在不同攻击者辅助查询预算下重复窃取流程。
+Public reward model experiments in `scripts/open_source_reward_models/`:
 
-`scripts/open_source_reward_models/`：
+- `run_public_reward_model_extraction.sh`: Runs standard extraction from a public RM.
+- `run_public_reward_model_disjoint_extraction.sh`: Runs public-RM extraction with disjoint auxiliary data.
+- `run_public_reward_model_joint_distill.sh`: Runs the joint-distillation variant.
+- `run_public_reward_model_pair_aux_distill.sh`: Distills a public RM using paired auxiliary data.
 
-- `run_public_reward_model_extraction.sh`：从公开奖励模型执行标准窃取流程。
-- `run_public_reward_model_disjoint_extraction.sh`：使用互斥辅助数据执行公开 RM 窃取。
-- `run_public_reward_model_joint_distill.sh`：运行联合蒸馏变体。
-- `run_public_reward_model_pair_aux_distill.sh`：使用成对辅助数据进行蒸馏。
+### `membership_inference/`
 
-### `membership_inference/`：成员推断
+The attack is divided into four sequential stages. Intermediate results are passed between stages as JSON or JSONL artifacts with metadata.
 
-该方法将攻击拆为四个顺序阶段，阶段间通过带元数据的 JSON/JSONL artifact 传递结果。
+- `method/3_1_target_data_decomposition.py`: Loads target preference data, normalizes membership labels, and creates Stage 1 records.
+- `method/3_2_candidate_response_generation.py`: Generates candidate responses and scores them with a reward model.
+- `method/3_3_llm_update_ppo_full.py`: Performs an independent PPO probe for each record and extracts update signals such as gradient norms.
+- `method/3_4_membership_inference.py`: Combines reward margins and gradient norms, applies a calibrated threshold, and reports AUC, F1, TPR/FPR, and related metrics.
+- `tool/__init__.py`: Marks the utility directory as a Python package.
+- `tool/paper_mia.py`: Shared I/O, field normalization, reward scoring, token encoding, PPO loss, and gradient utilities.
 
-- `method/3_1_target_data_decomposition.py`：读取目标偏好数据，规范化成员标签并生成第一阶段记录。
-- `method/3_2_candidate_response_generation.py`：为每条目标记录生成候选回答，并用奖励模型打分。
-- `method/3_3_llm_update_ppo_full.py`：对每条记录独立执行 PPO 探测，提取梯度范数等更新信号。
-- `method/3_4_membership_inference.py`：融合奖励间隔与梯度范数，按校准阈值预测成员身份并计算 AUC、F1、TPR/FPR 等指标。
-- `tool/__init__.py`：将工具目录标记为 Python 包。
-- `tool/paper_mia.py`：四阶段共享的 I/O、字段规范化、奖励打分、token 编码、PPO 损失及梯度工具。
+### `data_reconstruction/`
 
-### `data_reconstruction/`：训练数据重构
+- `method/step1_finetune_seq2seq.py`: Fine-tunes a Seq2Seq or causal language model on `(x, y_plus) -> y_minus`, with LoRA and sequence-length budgeting support.
+- `method/stage2_generate_candidates_k3.py`: Generates three reconstruction candidates for each input and records intermediate results.
+- `method/stage3_select_lowest_reward.py`: Selects the lowest-reward candidate as the final reconstruction.
+- `evaluation/eval_bleu_cosine.py`: Computes BLEU-style lexical overlap and cosine similarity between Transformer representations of reconstructed and reference text.
 
-- `method/step1_finetune_seq2seq.py`：用 `(x, y_plus) → y_minus` 任务微调 Seq2Seq/因果语言模型，并支持 LoRA 与长度预算控制。
-- `method/stage2_generate_candidates_k3.py`：对每个输入生成 3 个候选重构回答并组织中间结果。
-- `method/stage3_select_lowest_reward.py`：用奖励模型选择奖励最低的候选，作为最终重构结果。
-- `evaluation/eval_bleu_cosine.py`：计算重构文本与真实文本的 BLEU 风格词面指标及 Transformer 表征余弦相似度。
+### `defense/`
 
-### `defense/`：差分隐私防御
+`defense/reward-model-extraction/` trains LoRA reward models with record-level DP-SGD and reuses scoring and evaluation code from the main extraction directory.
 
-`defense/reward-model-extraction/` 使用记录级 DP-SGD 训练 LoRA 奖励模型，并复用主窃取目录中的打分与评估代码。
+- `README.md`: Defense module overview.
+- `train_target_rm_llama_lora_dp.py`: Self-contained DP-SGD LoRA RM trainer that clips per-record preference-pair gradients, adds Gaussian noise, and tracks privacy loss with an RDP accountant.
+- `run_one_target_roberta_33_dp.sh`: Runs a single-target RoBERTa DP experiment with the 33% data setting.
+- `run_llama2_7b_dp_eps8_33.sh`: Runs the Llama-2-7B DP experiment with an approximate target privacy budget of epsilon 8 and 33% of the data.
+- `run_all_remaining_dp_eps8_33.sh`: Runs the remaining epsilon-8, 33%-data DP configurations.
 
-- `README.md`：防御模块简介。
-- `train_target_rm_llama_lora_dp.py`：自包含的 DP-SGD LoRA RM 训练器；按偏好对裁剪单记录梯度、注入高斯噪声并用 RDP accountant 记录隐私损失。
-- `run_one_target_roberta_33_dp.sh`：运行单目标 RoBERTa 的 33% 数据 DP 实验。
-- `run_llama2_7b_dp_eps8_33.sh`：运行 Llama-2-7B、目标隐私预算约为 epsilon=8 的 33% 数据实验。
-- `run_all_remaining_dp_eps8_33.sh`：批量补跑其余 epsilon=8、33% 数据设置。
+### `baseline/`
 
-### `baseline/`：对比基线
+#### Reward Model Extraction Baselines
 
-#### 奖励模型窃取基线
+- `reward-model-extraction/README.md`: Overview of the two extraction baselines.
+- `reward-model-extraction/baseline1/train_minillm_rm_reverse_kl.py`: MiniLLM-style reverse-KL distillation that converts target and substitute RM scores into soft preference distributions.
+- `reward-model-extraction/baseline2/train_baseline2_miniplm_rm_difference_sampling.py`: MiniPLM-style reward-difference sampling and substitute-RM training.
+- `reward-model-extraction/baseline2/run_baseline2_all_train_and_diff_seq.sh`: Sequentially runs baseline 2 training and difference evaluation.
 
-- `reward-model-extraction/README.md`：两类窃取基线说明。
-- `reward-model-extraction/baseline1/train_minillm_rm_reverse_kl.py`：MiniLLM 风格的反向 KL 蒸馏基线，把目标/替代 RM 分数转成软偏好分布。
-- `reward-model-extraction/baseline2/train_baseline2_miniplm_rm_difference_sampling.py`：MiniPLM 风格的奖励差异采样与替代 RM 训练。
-- `reward-model-extraction/baseline2/run_baseline2_all_train_and_diff_seq.sh`：顺序运行 baseline2 的训练与差异评估。
+#### Data Reconstruction Baseline
 
-#### 数据重构基线
+- `data_reconstruction_baseline/README.md`: Directory overview and usage example.
+- `data_reconstruction_baseline/prompt_engineering_reward/README.md`: Description of the iterative reward-feedback prompting method.
+- `data_reconstruction_baseline/prompt_engineering_reward/baseline_components.py`: Shared generator, reward scorer, prompt templates, arguments, and I/O components.
+- `data_reconstruction_baseline/prompt_engineering_reward/run_baseline.py`: Low-memory iterative reconstruction entry point that loads the generator and reward model in separate stages.
+- `data_reconstruction_baseline/prompt_engineering_reward/run_llama2_7b.sh`: Runs the Llama-2-7B prompting baseline and BLEU/cosine evaluation.
 
-- `data_reconstruction_baseline/README.md`：重构基线目录说明与运行示例。
-- `data_reconstruction_baseline/prompt_engineering_reward/README.md`：基于奖励反馈的迭代提示方法说明。
-- `data_reconstruction_baseline/prompt_engineering_reward/baseline_components.py`：生成器、奖励打分器、提示模板、参数与 I/O 公共组件。
-- `data_reconstruction_baseline/prompt_engineering_reward/run_baseline.py`：低显存迭代重构入口，分阶段加载生成模型与奖励模型。
-- `data_reconstruction_baseline/prompt_engineering_reward/run_llama2_7b.sh`：运行 Llama-2-7B 提示基线并调用 BLEU/余弦评估。
+#### Membership Inference Baseline: SPV-MIA
 
-#### 成员推断基线：SPV-MIA
+- `ANeurIPS2024_SPV-MIA-main/scripts/spv_mia_safe_rlhf.py`: Implements SPV-MIA for Safe-RLHF models and computes ROC/AUC metrics.
+- `ANeurIPS2024_SPV-MIA-main/scripts/run_spv_mia_5models_2gpu.sh`: Runs five model configurations across two GPUs.
+- `ANeurIPS2024_SPV-MIA-main/scripts/tail_spv_mia_5models_logs.sh`: Follows logs for the five SPV-MIA runs.
+- `ANeurIPS2024_SPV-MIA-main/scripts/refresh_spv_mia_low_fpr_summary.py`: Recomputes and summarizes SPV-MIA metrics in the low-FPR region.
 
-- `ANeurIPS2024_SPV-MIA-main/scripts/spv_mia_safe_rlhf.py`：在 Safe-RLHF 双奖励模型上实现 SPV-MIA，并计算 ROC/AUC 等指标。
-- `ANeurIPS2024_SPV-MIA-main/scripts/run_spv_mia_5models_2gpu.sh`：用两张 GPU 批量运行五个模型。
-- `ANeurIPS2024_SPV-MIA-main/scripts/tail_spv_mia_5models_logs.sh`：集中跟踪五个模型的运行日志。
-- `ANeurIPS2024_SPV-MIA-main/scripts/refresh_spv_mia_low_fpr_summary.py`：重新汇总低 FPR 区域的 SPV-MIA 指标。
+#### Membership Inference Baseline: ICP-MIA
 
-#### 成员推断基线：ICP-MIA
+- `ICP-MIA-main/prepare_safe_rlhf_data.py`: Converts Safe-RLHF data into the format required by ICP-MIA.
+- `ICP-MIA-main/icp_mia_attack.py`: Implements similarity-prefix and self-perturbation ICP attacks, configuration loading, evaluation, and plotting.
+- `ICP-MIA-main/scripts/run_icp_mia_5models.sh`: Runs ICP-MIA for five model configurations.
 
-- `ICP-MIA-main/prepare_safe_rlhf_data.py`：把 Safe-RLHF 数据准备成 ICP-MIA 所需格式。
-- `ICP-MIA-main/icp_mia_attack.py`：实现基于相似前缀或自扰动的 ICP 成员推断、配置加载、评估与绘图。
-- `ICP-MIA-main/scripts/run_icp_mia_5models.sh`：批量对五个模型运行 ICP-MIA。
+## Suggested Workflow
 
-## 推荐运行顺序
+1. Prepare preference JSONL files, attacker auxiliary data, and local model paths.
+2. Validate the fields and model compatibility of one Python entry point with a small sample and short sequence length.
+3. Replace placeholder paths, GPU IDs, and experiment sizes in the relevant shell launcher.
+4. After validating the main workflow, run the batch, ablation, and comparison scripts under `scripts/`.
 
-1. 准备偏好 JSONL、攻击者辅助数据和本地模型路径。
-2. 先用小样本及较短序列验证单个 Python 入口的字段和模型兼容性。
-3. 再修改对应 `.sh` 中的占位路径、GPU 编号和实验规模。
-4. 主流程成功后运行 `scripts/` 中的批处理、消融和对比脚本。
-
-所有 Python 入口均建议先执行 `python path/to/script.py --help` 查看实际参数。
+Run `python path/to/script.py --help` before using a Python entry point to review its actual command-line arguments.
